@@ -42,6 +42,6 @@ app.use((req, res) => {
 });
 
 const port = process.env.PORT || 3500;
-app.listen(port, '127.0.0.1', () => {
-    console.log(`Artist-Upload-Portal laeuft auf http://127.0.0.1:${port}`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Artist-Upload-Portal laeuft auf http://0.0.0.0:${port}`);
 });
