@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin-Login — Luziferase Upload</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="wrap" style="max-width: 420px; padding-top: 96px;">
+        <div class="eyebrow">Luziferase on Air</div>
+        <h1>Admin-Login</h1>
+        <p class="subtitle">Verwaltung von Artists und eingereichten Tracks.</p>
+
+        <div class="panel">
+            <% if (error) { %>
+                <div class="msg error"><%= error %></div>
+            <% } %>
+            <form method="POST" action="/admin/login">
+                <label for="email">E-Mail</label>
+                <input type="email" id="email" name="email" required autofocus>
+
+                <label for="password">Passwort</label>
+                <input type="password" id="password" name="password" required>
+
+                <button type="submit">Anmelden</button>
+            </form>
+        </div>
+
+        <a class="footer-link" href="/login">← Zum Artist-Login</a>
+    </div>
+</body>
+</html>

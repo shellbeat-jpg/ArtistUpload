@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard — Luziferase Upload</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+    <div class="eyebrow">Luziferase on Air</div>
+    <h1><%= artist.name %></h1>
+    <p class="subtitle">Deine Tracks, dein Kontingent, deine Angaben.</p>
+
+    <% if (message) { %><div class="msg ok"><%= message %></div><% } %>
+    <% if (error) { %><div class="msg error"><%= error %></div><% } %>
+
+    <!-- Kontingent -->
+    <div class="panel">
+        <div class="quota-label">
+            <span>Speicher genutzt</span>
+            <span><%= usedMb %> MB / <%= quotaMb %> MB</span>
+        </div>
+        <div class="quota-bar">
+            <div class="quota-bar-fill <%= percentUsed > 90 ? 'danger' : (percentUsed > 70 ? 'warn' : '') %>"
+                 style="width: <%= percentUsed %>%;"></div>
+        </div>
+    </div>
+
+    <!-- Profil -->
+    <h2>Profil</h2>
+    <div class="panel">
+        <form method="POST" action="/profile">
+            <label for="name">Artist Name</label>
+            <input type="text" id="name" name="name" value="<%= artist.name %>" required>
+
+            <label for="artist_page_url">URL Artist Page</label>
+            <input type="text" id="artist_page_url" name="artist_page_url" value="<%= artist.artist_page_url || '' %>" placeholder="https://..." required>
+
+            <label for="bio">Bio (Freitext, optional)</label>
+            <textarea id="bio" name="bio" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= artist.bio || '' %></textarea>
+
+            <label for="contact_email">Kontakt E-Mail (interne Kommunikation)</label>
+            <input type="email" id="contact_email" name="contact_email" value="<%= artist.contact_email || '' %>">
+
+            <label for="contact_phone">Kontakt Telefon (optional)</label>
+            <input type="text" id="contact_phone" name="contact_phone" value="<%= artist.contact_phone || '' %>">
+
+            <p class="hint">Mindestens Telefon oder E-Mail als Kontakt angeben.</p>
+
+            <button type="submit" class="btn-quiet">Profil speichern</button>
+        </form>
+    </div>
+
+    <!-- Neuer Upload -->
+    <h2>Neuen Track hochladen</h2>
+    <div class="panel">
+        <form method="POST" action="/tracks/upload" enctype="multipart/form-data">
+            <label for="title">Track Name</label>
+            <input type="text" id="title" name="title" required>
+
+            <label for="genre">Genre</label>
+            <input type="text" id="genre" name="genre" required>
+
+            <label for="bpm">BPM (optional)</label>
+            <input type="number" id="bpm" name="bpm" min="1">
+
+            <label for="track_page_url">URL Track Page</label>
+            <input type="text" id="track_page_url" name="track_page_url" placeholder="https://..." required>
+
+            <label for="video_url">URL Video (optional)</label>
+            <input type="text" id="video_url" name="video_url" placeholder="https://...">
+
+            <label for="bio_lyrics">Bio / Lyrics (Freitext, optional)</label>
+            <textarea id="bio_lyrics" name="bio_lyrics" rows="4" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"></textarea>
+
+            <label for="track">Audiodatei (FLAC / WAV / MP3)</label>
+            <input type="file" id="track" name="track" accept="audio/*" required>
+
+            <label for="image">Track Image</label>
+            <input type="file" id="image" name="image" accept="image/*" required>
+
+            <button type="submit">Hochladen</button>
+        </form>
+    </div>
+
+    <!-- Track-Liste -->
+    <h2>Deine Tracks</h2>
+    <% if (tracks.length === 0) { %>
+        <div class="panel"><p class="hint">Noch keine Tracks hochgeladen.</p></div>
+    <% } %>
+
+    <% tracks.forEach(function(track) { %>
+        <div class="panel">
+            <div style="display:flex; gap:16px;">
+                <% if (track.image_filename) { %>
+                    <img src="/track-images/<%= track.image_filename %>" alt=""
+                         style="width:72px; height:72px; object-fit:cover; border-radius:3px; border:1px solid var(--panel-border);">
+                <% } %>
+                <div style="flex:1;">
+                    <div style="display:flex; justify-content:space-between; align-items:start;">
+                        <div>
+                            <strong><%= track.title %></strong>
+                            <div class="hint"><%= track.genre %><% if (track.bpm) { %> · <%= track.bpm %> BPM<% } %></div>
+                        </div>
+                        <span class="status <%= track.status %>"><%= track.status %></span>
+                    </div>
+                    <% if (track.status === 'abgelehnt' && track.reject_reason) { %>
+                        <p class="hint" style="color: var(--danger);">Grund: <%= track.reject_reason %></p>
+                    <% } %>
+                    <p class="hint">
+                        <%= (track.filesize_mb).toFixed(1) %> MB ·
+                        hochgeladen <%= new Date(track.uploaded_at).toLocaleDateString('de-DE') %>
+                        <% if (track.track_page_url) { %> · <a href="<%= track.track_page_url %>" target="_blank" rel="noopener noreferrer">Track Page</a><% } %>
+                        <% if (track.video_url) { %> · <a href="<%= track.video_url %>" target="_blank" rel="noopener noreferrer">Video</a><% } %>
+                    </p>
+                </div>
+            </div>
+
+            <details style="margin-top: 12px;">
+                <summary style="cursor:pointer; font-size:12px; color: var(--text-dim);">Bearbeiten / ersetzen</summary>
+                <form method="POST" action="/tracks/<%= track.id %>/replace" enctype="multipart/form-data" style="margin-top:12px;">
+                    <label>Track Name</label>
+                    <input type="text" name="title" value="<%= track.title %>" required>
+
+                    <label>Genre</label>
+                    <input type="text" name="genre" value="<%= track.genre %>" required>
+
+                    <label>BPM (optional)</label>
+                    <input type="number" name="bpm" min="1" value="<%= track.bpm || '' %>">
+
+                    <label>URL Track Page</label>
+                    <input type="text" name="track_page_url" value="<%= track.track_page_url || '' %>" required>
+
+                    <label>URL Video (optional)</label>
+                    <input type="text" name="video_url" value="<%= track.video_url || '' %>">
+
+                    <label>Bio / Lyrics (optional)</label>
+                    <textarea name="bio_lyrics" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= track.bio_lyrics || '' %></textarea>
+
+                    <label>Neue Audiodatei (optional — leer lassen, um die bestehende zu behalten)</label>
+                    <input type="file" name="track" accept="audio/*">
+
+                    <label>Neues Track Image (optional)</label>
+                    <input type="file" name="image" accept="image/*">
+
+                    <div class="track-actions">
+                        <button type="submit" class="btn-small">Speichern</button>
+                    </div>
+                </form>
+            </details>
+
+            <form method="POST" action="/tracks/<%= track.id %>/delete"
+                  onsubmit="return confirm('Track wirklich loeschen?');" style="margin-top:8px;">
+                <button type="submit" class="btn-danger btn-small">Loeschen</button>
+            </form>
+        </div>
+    <% }); %>
+
+    <form method="POST" action="/logout" style="margin-top: 32px;">
+        <button type="submit" class="btn-quiet btn-small">Abmelden</button>
+    </form>
+</div>
+</body>
+</html>

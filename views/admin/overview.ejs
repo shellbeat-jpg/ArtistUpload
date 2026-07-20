@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin — Luziferase Upload</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+    <div class="eyebrow">Luziferase on Air</div>
+    <h1>Admin</h1>
+    <p class="subtitle">Artists verwalten, Tracks pruefen und mit AzuraCast synchronisieren.</p>
+
+    <% if (message) { %><div class="msg ok"><%= message %></div><% } %>
+    <% if (error) { %><div class="msg error"><%= error %></div><% } %>
+
+    <!-- Eingereichte Tracks -->
+    <h2>Zur Pruefung eingereicht (<%= pendingTracks.length %>)</h2>
+    <% if (pendingTracks.length === 0) { %>
+        <div class="panel"><p class="hint">Aktuell nichts zu pruefen.</p></div>
+    <% } %>
+
+    <% pendingTracks.forEach(function(track) { %>
+        <div class="panel">
+            <div style="display:flex; gap:16px;">
+                <% if (track.image_filename) { %>
+                    <img src="/track-images/<%= track.image_filename %>" alt=""
+                         style="width:64px; height:64px; object-fit:cover; border-radius:3px; border:1px solid var(--panel-border);">
+                <% } %>
+                <div style="flex:1;">
+                    <strong><%= track.title %></strong> — <%= track.artist_name %>
+                    <div class="hint">
+                        <%= track.genre %><% if (track.bpm) { %> · <%= track.bpm %> BPM<% } %> ·
+                        <%= track.filesize_mb.toFixed(1) %> MB ·
+                        <% if (track.azuracast_media_id) { %>bereits live, wird ersetzt<% } else { %>neu<% } %>
+                    </div>
+                    <% if (track.bio_lyrics) { %>
+                        <p class="hint" style="white-space: pre-line;"><%= track.bio_lyrics %></p>
+                    <% } %>
+                    <p class="hint">
+                        <% if (track.track_page_url) { %><a href="<%= track.track_page_url %>" target="_blank" rel="noopener noreferrer">Track Page</a><% } %>
+                        <% if (track.video_url) { %> · <a href="<%= track.video_url %>" target="_blank" rel="noopener noreferrer">Video</a><% } %>
+                    </p>
+                </div>
+            </div>
+
+            <form method="POST" action="/admin/tracks/<%= track.id %>/approve-and-sync" style="margin-top:10px;">
+                <label>Playlist-IDs (kommasepariert, aus AzuraCast)</label>
+                <input type="text" name="playlist_ids" placeholder="z.B. 3 oder 3,5">
+                <div class="track-actions">
+                    <button type="submit" class="btn-small">Freigeben &amp; synchronisieren</button>
+                </div>
+            </form>
+
+            <form method="POST" action="/admin/tracks/<%= track.id %>/reject" style="margin-top:8px;">
+                <input type="text" name="reason" placeholder="Ablehnungsgrund (optional)"
+                       style="width:auto; display:inline-block; margin-right:8px;">
+                <button type="submit" class="btn-danger btn-small">Ablehnen</button>
+            </form>
+        </div>
+    <% }); %>
+
+    <hr class="divider">
+
+    <!-- Neuen Artist anlegen -->
+    <h2>Neuen Artist anlegen</h2>
+    <div class="panel">
+        <form method="POST" action="/admin/artists">
+            <label>Artist Name</label>
+            <input type="text" name="name" required>
+
+            <label>Login E-Mail</label>
+            <input type="email" name="email" required>
+
+            <label>Initial-Passwort</label>
+            <input type="password" name="password" required>
+
+            <label>Kontingent (MB)</label>
+            <input type="number" name="quota_mb" value="500" min="1">
+
+            <label>URL Artist Page</label>
+            <input type="text" name="artist_page_url" placeholder="https://...">
+
+            <label>Kontakt E-Mail</label>
+            <input type="email" name="contact_email">
+
+            <label>Kontakt Telefon (optional)</label>
+            <input type="text" name="contact_phone">
+
+            <button type="submit">Artist anlegen</button>
+        </form>
+    </div>
+
+    <!-- Artist-Liste -->
+    <h2>Artists</h2>
+    <div class="panel">
+        <table>
+            <thead>
+                <tr><th>Name</th><th>E-Mail</th><th>Kontingent</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody>
+                <% artists.forEach(function(a) { %>
+                    <tr>
+                        <td><%= a.name %></td>
+                        <td><%= a.email %></td>
+                        <td>
+                            <form method="POST" action="/admin/artists/<%= a.id %>/quota" style="display:flex; gap:6px;">
+                                <input type="number" name="quota_mb" value="<%= a.quota_mb %>" style="width:90px;">
+                                <button type="submit" class="btn-quiet btn-small">Setzen</button>
+                            </form>
+                        </td>
+                        <td><%= a.active ? 'aktiv' : 'gesperrt' %></td>
+                        <td>
+                            <form method="POST" action="/admin/artists/<%= a.id %>/toggle-active">
+                                <button type="submit" class="btn-quiet btn-small">
+                                    <%= a.active ? 'Sperren' : 'Entsperren' %>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                <% }); %>
+            </tbody>
+        </table>
+    </div>
+
+    <form method="POST" action="/admin/logout" style="margin-top: 32px;">
+        <button type="submit" class="btn-quiet btn-small">Abmelden</button>
+    </form>
+</div>
+</body>
+</html>
