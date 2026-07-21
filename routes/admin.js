@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const fs = require('fs');
 const db = require('../db/connection');
 const { requireAdmin } = require('../lib/auth');
 const azuracast = require('../lib/azuracast');
@@ -154,6 +155,17 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
                 genre: track.genre,
                 lyrics: track.bio_lyrics,
             });
+
+            // Album-Cover hochladen
+            const imagePath = path.join(__dirname, '..', 'public', 'track-images', `${track.id}.jpg`);
+            if (fs.existsSync(imagePath)) {
+                try {
+                    await azuracast.uploadArt(newMediaId, imagePath);
+                } catch (artError) {
+                    console.error('Album-Cover Upload fehlgeschlagen:', artError.message);
+                    // Nicht fataal, Track ist trotzdem freigegeben
+                }
+            }
         }
 
         db.prepare(`
