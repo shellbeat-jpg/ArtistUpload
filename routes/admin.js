@@ -145,15 +145,16 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
             }
         }
 
-        // Standard-Metadaten mit uebertragen (Titel, Artist, Genre, Bio/Lyrics-Freitext).
-        // BPM, Video-/Artist-/Track-Page-URL bleiben vorerst in dieser Anwendung gepflegt,
-        // siehe Hinweis in lib/azuracast.js -> setMetadata().
+        // Metadaten mit Standard-Feldern und Custom Fields (BPM, URL_Track, URL_Artist) uebertragen
         if (newMediaId) {
             await azuracast.setMetadata(newMediaId, {
                 title: track.title,
                 artist: artist.name,
                 genre: track.genre,
                 lyrics: track.bio_lyrics,
+                bpm: track.bpm,
+                url_track: track.track_page_url,
+                url_artist: artist.artist_page_url,
             });
 
             // Album-Cover hochladen
