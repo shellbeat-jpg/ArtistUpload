@@ -42,20 +42,11 @@ CREATE TABLE IF NOT EXISTS tracks (
     filesize_mb REAL NOT NULL,
     status TEXT NOT NULL DEFAULT 'eingereicht', -- eingereicht | freigegeben | abgelehnt
     azuracast_media_id TEXT,
-    playlist_ids TEXT DEFAULT '',          -- kommasepariert, vom Admin bei approve-and-sync gesetzt
     reject_reason TEXT,
     uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 `);
-
-// Migration fuer bereits bestehende Datenbanken (CREATE TABLE IF NOT EXISTS legt die
-// Spalte auf frischen Installationen zwar mit an, aendert aber kein vorhandenes Schema).
-try {
-    db.exec("ALTER TABLE tracks ADD COLUMN playlist_ids TEXT DEFAULT ''");
-} catch (e) {
-    // Spalte existiert bereits -- kein Problem.
-}
 
 // Ersten Admin-Account anlegen, falls noch keiner existiert
 const existing = db.prepare('SELECT COUNT(*) AS c FROM admins').get();

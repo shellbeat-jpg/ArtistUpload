@@ -1,15 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
-const multer = require('multer');
 const db = require('../db/connection');
 const { requireArtist } = require('../lib/auth');
 const { upload, validateImageSize } = require('../lib/upload');
-const azuracast = require('../lib/azuracast');
-const { detectBpm } = require('../lib/bpm');
 
 const router = express.Router();
 
@@ -56,7 +51,7 @@ router.get('/dashboard', requireArtist, (req, res) => {
 
 // --- Eigenes Profil aktualisieren (Artist Name, Artist Page URL, Kontakt, Bio) ---
 
-router.post('/profile', requireArtist, async (req, res) => {
+router.post('/profile', requireArtist, (req, res) => {
     const { name, artist_page_url, contact_email, contact_phone, bio } = req.body;
 
     if (!name || !name.trim()) {
@@ -82,36 +77,7 @@ router.post('/profile', requireArtist, async (req, res) => {
         req.session.artistId
     );
 
-    // Name und Artist-Page-URL fliessen in die Metadaten (Standardfeld "artist" bzw.
-    // Custom Field url_artist) jedes bereits mit AzuraCast synchronisierten Tracks
-    // dieses Artists ein -- diese direkt nachziehen.
-    const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(req.session.artistId);
-    const syncedTracks = db
-        .prepare('SELECT * FROM tracks WHERE artist_id = ? AND azuracast_media_id IS NOT NULL')
-        .all(artist.id);
-
-    let syncFailed = false;
-    for (const track of syncedTracks) {
-        try {
-            await azuracast.setMetadata(track.azuracast_media_id, {
-                title: track.title,
-                artist: artist.name,
-                genre: track.genre,
-                lyrics: track.bio_lyrics,
-                bpm: track.bpm,
-                url_track: track.track_page_url,
-                url_artist: artist.artist_page_url,
-            });
-        } catch (e) {
-            console.error(`AzuraCast-Sync fuer Track ${track.id} (Profil-Update) fehlgeschlagen:`, e.message);
-            syncFailed = true;
-        }
-    }
-
-    const msg = syncFailed
-        ? 'Profil aktualisiert. Hinweis: Sync mit AzuraCast ist fuer mindestens einen bereits live geschalteten Track fehlgeschlagen, bitte im Admin-Bereich pruefen.'
-        : 'Profil aktualisiert.';
-    res.redirect(`/dashboard?msg=${encodeURIComponent(msg)}`);
+    res.redirect('/dashboard?msg=Profil aktualisiert.');
 });
 
 // --- Gemeinsame Validierung der Track-Zusatzfelder ---
@@ -126,37 +92,6 @@ function validateTrackFields(body) {
     }
     return errors;
 }
-
-// --- BPM-Erkennung fuer eine gerade ausgewaehlte, noch nicht endgueltig
-// hochgeladene Audiodatei (siehe views/artist/dashboard.ejs) ---
-// Datei landet nur temporaer in os.tmpdir() und wird nach der Analyse sofort
-// wieder geloescht -- das ist kein persistenter Upload.
-
-const analyzeUpload = multer({
-    storage: multer.diskStorage({
-        destination: (req, file, cb) => cb(null, os.tmpdir()),
-        filename: (req, file, cb) => {
-            const ext = path.extname(file.originalname).toLowerCase();
-            cb(null, `bpm-analyze-${crypto.randomBytes(8).toString('hex')}${ext}`);
-        },
-    }),
-    limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB, 10) || 300) * 1024 * 1024 },
-});
-
-router.post('/tracks/analyze-bpm', requireArtist, (req, res) => {
-    analyzeUpload.single('track')(req, res, async (err) => {
-        if (err || !req.file) {
-            return res.status(400).json({ bpm: null, error: 'Keine gueltige Audiodatei.' });
-        }
-
-        try {
-            const bpm = await detectBpm(req.file.path);
-            res.json({ bpm });
-        } finally {
-            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        }
-    });
-});
 
 // --- Neuer Upload ---
 
@@ -236,13 +171,11 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
 });
 
 // --- Bestehenden Track ersetzen (Audio, Bild und Angaben) ---
-// Hinweis: War der Track bereits mit AzuraCast synchronisiert (azuracast_media_id
-// gesetzt), werden alle Aenderungen -- Audio, Bild und Textfelder -- direkt im
-// Anschluss automatisch nach AzuraCast uebertragen. Der Status wird trotzdem auf
-// "eingereicht" zurueckgesetzt, damit der Admin die Aenderung im Ueberblick sieht.
+// Hinweis: Der AzuraCast-Sync fuer bereits freigegebene Tracks erfolgt separat
+// durch den Admin (routes/admin.js -> /admin/tracks/:id/approve-and-sync).
 
 router.post('/tracks/:id/replace', requireArtist, (req, res) => {
-    upload.fields([{ name: 'track', maxCount: 1 }, { name: 'image', maxCount: 1 }])(req, res, async (err) => {
+    upload.fields([{ name: 'track', maxCount: 1 }, { name: 'image', maxCount: 1 }])(req, res, (err) => {
         if (err) {
             return res.redirect(`/dashboard?err=${encodeURIComponent(err.message)}`);
         }
@@ -340,50 +273,8 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
             track.id
         );
 
-        let syncNote = '';
-        if (wasSynced) {
-            try {
-                let mediaId = track.azuracast_media_id;
-
-                // Audiodatei wurde ersetzt -> alte AzuraCast-Datei ersetzen und dabei
-                // dieselben Playlists erneut zuordnen (aus der Admin-Freigabe gemerkt).
-                if (trackFile) {
-                    const localPath = path.join(__dirname, '..', 'uploads', newFilepath);
-                    const targetFilename = `artists/${artist.id}/${newFilepath}`;
-                    const playlistIds = (track.playlist_ids || '')
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter(Boolean)
-                        .map(Number);
-                    mediaId = await azuracast.replaceFile(track.azuracast_media_id, localPath, targetFilename, playlistIds);
-                }
-
-                await azuracast.setMetadata(mediaId, {
-                    title: req.body.title.trim(),
-                    artist: artist.name,
-                    genre: req.body.genre.trim(),
-                    lyrics: (req.body.bio_lyrics || '').trim(),
-                    bpm: req.body.bpm ? parseInt(req.body.bpm, 10) : null,
-                    url_track: req.body.track_page_url.trim(),
-                    url_artist: artist.artist_page_url,
-                });
-
-                if (imageFile) {
-                    const imagePath = path.join(__dirname, '..', 'public', 'track-images', newImageFilename);
-                    if (fs.existsSync(imagePath)) {
-                        await azuracast.uploadArt(mediaId, imagePath);
-                    }
-                }
-
-                db.prepare('UPDATE tracks SET azuracast_media_id = ? WHERE id = ?').run(String(mediaId), track.id);
-            } catch (e) {
-                console.error(`AzuraCast-Sync fuer Track ${track.id} (Bearbeitung) fehlgeschlagen:`, e.message);
-                syncNote = ' Hinweis: automatischer AzuraCast-Sync ist fehlgeschlagen, bitte im Admin-Bereich pruefen.';
-            }
-        }
-
         const msg = wasSynced
-            ? `Track aktualisiert und mit AzuraCast synchronisiert.${syncNote}`
+            ? 'Track aktualisiert. Da er bereits live war, muss die Aenderung erneut freigegeben werden.'
             : 'Track aktualisiert.';
         res.redirect(`/dashboard?msg=${encodeURIComponent(msg)}`);
     });

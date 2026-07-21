@@ -171,9 +171,9 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
 
         db.prepare(`
             UPDATE tracks
-            SET status = 'freigegeben', azuracast_media_id = ?, playlist_ids = ?, updated_at = CURRENT_TIMESTAMP
+            SET status = 'freigegeben', azuracast_media_id = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        `).run(String(newMediaId), playlistIds.join(','), track.id);
+        `).run(String(newMediaId), track.id);
 
         res.redirect('/admin?msg=Track freigegeben und mit AzuraCast synchronisiert.');
     } catch (e) {

@@ -15,6 +15,39 @@
     <% if (message) { %><div class="msg ok"><%= message %></div><% } %>
     <% if (error) { %><div class="msg error"><%= error %></div><% } %>
 
+    <script>
+        // Wird nach Auswahl einer Audiodatei aufgerufen: BPM-Feld waehrend der
+        // Analyse inaktiv setzen, Datei zur Analyse an den Server schicken,
+        // erkannten Wert (ganzzahlig) eintragen und Feld wieder freigeben.
+        function wireBpmDetection(fileInputId, bpmInputId) {
+            var fileInput = document.getElementById(fileInputId);
+            var bpmInput = document.getElementById(bpmInputId);
+            if (!fileInput || !bpmInput) return;
+
+            fileInput.addEventListener('change', function () {
+                if (!fileInput.files || !fileInput.files[0]) return;
+
+                bpmInput.disabled = true;
+                bpmInput.value = '';
+
+                var formData = new FormData();
+                formData.append('track', fileInput.files[0]);
+
+                fetch('/tracks/analyze-bpm', { method: 'POST', body: formData })
+                    .then(function (res) { return res.json(); })
+                    .then(function (data) {
+                        if (data && data.bpm) {
+                            bpmInput.value = data.bpm;
+                        }
+                    })
+                    .catch(function () { /* Erkennung fehlgeschlagen -- Feld bleibt manuell nutzbar */ })
+                    .finally(function () {
+                        bpmInput.disabled = false;
+                    });
+            });
+        }
+    </script>
+
     <!-- Kontingent -->
     <div class="panel">
         <div class="quota-label">
@@ -63,7 +96,7 @@
             <input type="text" id="genre" name="genre" required>
 
             <label for="bpm">BPM (optional)</label>
-            <input type="number" id="bpm" name="bpm" min="1">
+            <input type="number" id="bpm" name="bpm" min="1" disabled>
 
             <label for="track_page_url">URL Track Page</label>
             <input type="text" id="track_page_url" name="track_page_url" placeholder="https://..." required>
@@ -83,6 +116,7 @@
             <button type="submit">Hochladen</button>
         </form>
     </div>
+    <script>wireBpmDetection('track', 'bpm');</script>
 
     <!-- Track-Liste -->
     <h2>Deine Tracks</h2>
@@ -127,7 +161,7 @@
                     <input type="text" name="genre" value="<%= track.genre %>" required>
 
                     <label>BPM (optional)</label>
-                    <input type="number" name="bpm" min="1" value="<%= track.bpm || '' %>">
+                    <input type="number" name="bpm" id="replace-bpm-<%= track.id %>" min="1" value="<%= track.bpm || '' %>">
 
                     <label>URL Track Page</label>
                     <input type="text" name="track_page_url" value="<%= track.track_page_url || '' %>" required>
@@ -139,7 +173,7 @@
                     <textarea name="bio_lyrics" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= track.bio_lyrics || '' %></textarea>
 
                     <label>Neue Audiodatei (optional — leer lassen, um die bestehende zu behalten)</label>
-                    <input type="file" name="track" accept="audio/*">
+                    <input type="file" name="track" id="replace-track-<%= track.id %>" accept="audio/*">
 
                     <label>Neues Track Image (optional)</label>
                     <input type="file" name="image" accept="image/*">
@@ -148,6 +182,7 @@
                         <button type="submit" class="btn-small">Speichern</button>
                     </div>
                 </form>
+                <script>wireBpmDetection('replace-track-<%= track.id %>', 'replace-bpm-<%= track.id %>');</script>
             </details>
 
             <form method="POST" action="/tracks/<%= track.id %>/delete"
