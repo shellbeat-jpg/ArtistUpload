@@ -157,7 +157,7 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
             });
 
             // Album-Cover hochladen
-            const imagePath = path.join(__dirname, '..', 'public', 'track-images', `${track.id}.jpg`);
+            const imagePath = path.join(__dirname, '..', 'public', 'track-images', track.image_filename);
             if (fs.existsSync(imagePath)) {
                 try {
                     await azuracast.uploadArt(newMediaId, imagePath);
