@@ -1,0 +1,81 @@
+{
+  "common": {
+    "stationName": "Luziferase on Air",
+    "adminLoginLink": "Admin-Login →"
+  },
+  "login": {
+    "title": "Artist-Login",
+    "subtitle": "Zugang zur Verwaltung deiner Tracks.",
+    "email": "E-Mail",
+    "password": "Passwort",
+    "submit": "Anmelden",
+    "invalidCredentials": "E-Mail oder Passwort ist falsch."
+  },
+  "dashboard": {
+    "subtitle": "Deine Tracks, dein Kontingent, deine Angaben.",
+    "quotaLabel": "Speicher genutzt",
+    "profileHeading": "Profil",
+    "artistName": "Artist Name",
+    "artistPageUrl": "URL Artist Page",
+    "bio": "Bio (Freitext, optional)",
+    "contactEmail": "Kontakt E-Mail (interne Kommunikation)",
+    "contactPhone": "Kontakt Telefon (optional)",
+    "contactHint": "Mindestens Telefon oder E-Mail als Kontakt angeben.",
+    "saveProfile": "Profil speichern",
+    "uploadHeading": "Neuen Track hochladen",
+    "trackName": "Track Name",
+    "genre": "Genre",
+    "bpmOptional": "BPM (optional)",
+    "trackPageUrl": "URL Track Page",
+    "videoUrlOptional": "URL Video (optional)",
+    "bioLyrics": "Bio / Lyrics (Freitext, optional)",
+    "audioFile": "Audiodatei (FLAC / WAV / MP3)",
+    "trackImage": "Track Image",
+    "uploadSubmit": "Hochladen",
+    "analyzing": "Upload / Analyse",
+    "tracksHeading": "Deine Tracks",
+    "noTracks": "Noch keine Tracks hochgeladen.",
+    "rejectReason": "Grund:",
+    "trackPageLink": "Track Page",
+    "videoLink": "Video",
+    "editExpand": "Bearbeiten / ersetzen",
+    "newAudioOptional": "Neue Audiodatei (optional — leer lassen, um die bestehende zu behalten)",
+    "newImageOptional": "Neues Track Image (optional)",
+    "save": "Speichern",
+    "deleteConfirm": "Track wirklich loeschen?",
+    "delete": "Loeschen",
+    "logout": "Abmelden"
+  },
+  "messages": {
+    "profileNameRequired": "Artist Name darf nicht leer sein.",
+    "profileUrlRequired": "URL Artist Page ist ein Pflichtfeld.",
+    "profileContactRequired": "Bitte Telefon oder E-Mail als Kontakt angeben.",
+    "profileUpdated": "Profil aktualisiert.",
+    "profileUpdatedSyncFailed": "Profil aktualisiert. Hinweis: Sync mit AzuraCast ist fuer mindestens einen bereits live geschalteten Track fehlgeschlagen, bitte im Admin-Bereich pruefen.",
+    "trackTitleRequired": "Track Name ist ein Pflichtfeld.",
+    "trackGenreRequired": "Genre ist ein Pflichtfeld.",
+    "trackPageUrlRequired": "URL Track Page ist ein Pflichtfeld.",
+    "bpmPositive": "BPM muss eine positive Zahl sein.",
+    "noAudioFile": "Keine Audiodatei ausgewaehlt.",
+    "imageRequired": "Track Image ist ein Pflichtfeld.",
+    "quotaExceededUpload": "Kontingent ueberschritten. Noch verfuegbar: {{remaining}} MB.",
+    "quotaExceededExchange": "Kontingent ueberschritten. Fuer diesen Austausch verfuegbar: {{remaining}} MB.",
+    "trackNotFound": "Track nicht gefunden.",
+    "trackUploaded": "Track hochgeladen und zur Pruefung eingereicht.",
+    "trackUpdatedSynced": "Track aktualisiert und mit AzuraCast synchronisiert.",
+    "trackUpdated": "Track aktualisiert.",
+    "syncFailedNote": " Hinweis: automatischer AzuraCast-Sync ist fehlgeschlagen, bitte im Admin-Bereich pruefen.",
+    "trackDeleted": "Track geloescht.",
+    "invalidAudioFile": "Keine gueltige Audiodatei."
+  },
+  "status": {
+    "eingereicht": "eingereicht",
+    "freigegeben": "freigegeben",
+    "abgelehnt": "abgelehnt"
+  },
+  "upload": {
+    "imageFormatNotAllowed": "Bildformat .{{ext}} ist nicht erlaubt. Erlaubt: {{allowed}}",
+    "fileTypeNotAllowed": "Dateityp .{{ext}} ist nicht erlaubt. Erlaubt: {{allowed}}",
+    "imageTooLarge": "Bild ist zu gross (max. {{max}} MB)."
+  }
+}
