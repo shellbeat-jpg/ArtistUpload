@@ -1,16 +1,19 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="<%= lng %>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Dashboard — Luziferase Upload</title>
+    <title>Dashboard — <%= t('common.stationName') %></title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <div class="wrap">
-    <div class="eyebrow">Luziferase on Air</div>
+    <div class="lang-switch" style="text-align:right; font-size:12px; margin-bottom:8px;">
+        <a href="?lng=de">DE</a> · <a href="?lng=en">EN</a>
+    </div>
+    <div class="eyebrow"><%= t('common.stationName') %></div>
     <h1><%= artist.name %></h1>
-    <p class="subtitle">Deine Tracks, dein Kontingent, deine Angaben.</p>
+    <p class="subtitle"><%= t('dashboard.subtitle') %></p>
 
     <% if (message) { %><div class="msg ok"><%= message %></div><% } %>
     <% if (error) { %><div class="msg error"><%= error %></div><% } %>
@@ -19,9 +22,19 @@
         // Wird nach Auswahl einer Audiodatei aufgerufen: BPM-Feld waehrend der
         // Analyse inaktiv setzen, Datei zur Analyse an den Server schicken,
         // erkannten Wert (ganzzahlig) eintragen und Feld wieder freigeben.
-        function wireBpmDetection(fileInputId, bpmInputId) {
+        //
+        // submitButtonId ist optional (drittes Argument): wird sie angegeben,
+        // bleibt der zugehoerige Submit-Button waehrend der laufenden Analyse
+        // inaktiv (mit Label aus data-label-analyzing), damit ein Abschicken
+        // des Formulars vor Abschluss der Erkennung nicht mehr moeglich ist.
+        // Das BPM-Ergebnis kaeme sonst erst nach dem Submit an und ginge
+        // verloren. Die Labels kommen bewusst aus data-Attributen (statt
+        // hartkodiertem Text im Script), damit sie mit dem Template
+        // uebersetzt werden koennen.
+        function wireBpmDetection(fileInputId, bpmInputId, submitButtonId) {
             var fileInput = document.getElementById(fileInputId);
             var bpmInput = document.getElementById(bpmInputId);
+            var submitButton = submitButtonId ? document.getElementById(submitButtonId) : null;
             if (!fileInput || !bpmInput) return;
 
             fileInput.addEventListener('change', function () {
@@ -29,6 +42,13 @@
 
                 bpmInput.disabled = true;
                 bpmInput.value = '';
+
+                var originalButtonLabel = null;
+                if (submitButton) {
+                    originalButtonLabel = submitButton.textContent;
+                    submitButton.disabled = true;
+                    submitButton.textContent = submitButton.dataset.labelAnalyzing || originalButtonLabel;
+                }
 
                 var formData = new FormData();
                 formData.append('track', fileInput.files[0]);
@@ -43,6 +63,10 @@
                     .catch(function () { /* Erkennung fehlgeschlagen -- Feld bleibt manuell nutzbar */ })
                     .finally(function () {
                         bpmInput.disabled = false;
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                            submitButton.textContent = originalButtonLabel;
+                        }
                     });
             });
         }
@@ -51,7 +75,7 @@
     <!-- Kontingent -->
     <div class="panel">
         <div class="quota-label">
-            <span>Speicher genutzt</span>
+            <span><%= t('dashboard.quotaLabel') %></span>
             <span><%= usedMb %> MB / <%= quotaMb %> MB</span>
         </div>
         <div class="quota-bar">
@@ -61,67 +85,67 @@
     </div>
 
     <!-- Profil -->
-    <h2>Profil</h2>
+    <h2><%= t('dashboard.profileHeading') %></h2>
     <div class="panel">
         <form method="POST" action="/profile">
-            <label for="name">Artist Name</label>
+            <label for="name"><%= t('dashboard.artistName') %></label>
             <input type="text" id="name" name="name" value="<%= artist.name %>" required>
 
-            <label for="artist_page_url">URL Artist Page</label>
+            <label for="artist_page_url"><%= t('dashboard.artistPageUrl') %></label>
             <input type="text" id="artist_page_url" name="artist_page_url" value="<%= artist.artist_page_url || '' %>" placeholder="https://..." required>
 
-            <label for="bio">Bio (Freitext, optional)</label>
+            <label for="bio"><%= t('dashboard.bio') %></label>
             <textarea id="bio" name="bio" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= artist.bio || '' %></textarea>
 
-            <label for="contact_email">Kontakt E-Mail (interne Kommunikation)</label>
+            <label for="contact_email"><%= t('dashboard.contactEmail') %></label>
             <input type="email" id="contact_email" name="contact_email" value="<%= artist.contact_email || '' %>">
 
-            <label for="contact_phone">Kontakt Telefon (optional)</label>
+            <label for="contact_phone"><%= t('dashboard.contactPhone') %></label>
             <input type="text" id="contact_phone" name="contact_phone" value="<%= artist.contact_phone || '' %>">
 
-            <p class="hint">Mindestens Telefon oder E-Mail als Kontakt angeben.</p>
+            <p class="hint"><%= t('dashboard.contactHint') %></p>
 
-            <button type="submit" class="btn-quiet">Profil speichern</button>
+            <button type="submit" class="btn-quiet"><%= t('dashboard.saveProfile') %></button>
         </form>
     </div>
 
     <!-- Neuer Upload -->
-    <h2>Neuen Track hochladen</h2>
+    <h2><%= t('dashboard.uploadHeading') %></h2>
     <div class="panel">
         <form method="POST" action="/tracks/upload" enctype="multipart/form-data">
-            <label for="title">Track Name</label>
+            <label for="title"><%= t('dashboard.trackName') %></label>
             <input type="text" id="title" name="title" required>
 
-            <label for="genre">Genre</label>
+            <label for="genre"><%= t('dashboard.genre') %></label>
             <input type="text" id="genre" name="genre" required>
 
-            <label for="bpm">BPM (optional)</label>
+            <label for="bpm"><%= t('dashboard.bpmOptional') %></label>
             <input type="number" id="bpm" name="bpm" min="1" disabled>
 
-            <label for="track_page_url">URL Track Page</label>
+            <label for="track_page_url"><%= t('dashboard.trackPageUrl') %></label>
             <input type="text" id="track_page_url" name="track_page_url" placeholder="https://..." required>
 
-            <label for="video_url">URL Video (optional)</label>
+            <label for="video_url"><%= t('dashboard.videoUrlOptional') %></label>
             <input type="text" id="video_url" name="video_url" placeholder="https://...">
 
-            <label for="bio_lyrics">Bio / Lyrics (Freitext, optional)</label>
+            <label for="bio_lyrics"><%= t('dashboard.bioLyrics') %></label>
             <textarea id="bio_lyrics" name="bio_lyrics" rows="4" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"></textarea>
 
-            <label for="track">Audiodatei (FLAC / WAV / MP3)</label>
+            <label for="track"><%= t('dashboard.audioFile') %></label>
             <input type="file" id="track" name="track" accept="audio/*" required>
 
-            <label for="image">Track Image</label>
+            <label for="image"><%= t('dashboard.trackImage') %></label>
             <input type="file" id="image" name="image" accept="image/*" required>
 
-            <button type="submit">Hochladen</button>
+            <button type="submit" id="upload-submit" data-label-analyzing="<%= t('dashboard.analyzing') %>"><%= t('dashboard.uploadSubmit') %></button>
         </form>
     </div>
-    <script>wireBpmDetection('track', 'bpm');</script>
+    <script>wireBpmDetection('track', 'bpm', 'upload-submit');</script>
 
     <!-- Track-Liste -->
-    <h2>Deine Tracks</h2>
+    <h2><%= t('dashboard.tracksHeading') %></h2>
     <% if (tracks.length === 0) { %>
-        <div class="panel"><p class="hint">Noch keine Tracks hochgeladen.</p></div>
+        <div class="panel"><p class="hint"><%= t('dashboard.noTracks') %></p></div>
     <% } %>
 
     <% tracks.forEach(function(track) { %>
@@ -137,63 +161,63 @@
                             <strong><%= track.title %></strong>
                             <div class="hint"><%= track.genre %><% if (track.bpm) { %> · <%= track.bpm %> BPM<% } %></div>
                         </div>
-                        <span class="status <%= track.status %>"><%= track.status %></span>
+                        <span class="status <%= track.status %>"><%= t('status.' + track.status, { defaultValue: track.status }) %></span>
                     </div>
                     <% if (track.status === 'abgelehnt' && track.reject_reason) { %>
-                        <p class="hint" style="color: var(--danger);">Grund: <%= track.reject_reason %></p>
+                        <p class="hint" style="color: var(--danger);"><%= t('dashboard.rejectReason') %> <%= track.reject_reason %></p>
                     <% } %>
                     <p class="hint">
                         <%= (track.filesize_mb).toFixed(1) %> MB ·
-                        hochgeladen <%= new Date(track.uploaded_at).toLocaleDateString('de-DE') %>
-                        <% if (track.track_page_url) { %> · <a href="<%= track.track_page_url %>" target="_blank" rel="noopener noreferrer">Track Page</a><% } %>
-                        <% if (track.video_url) { %> · <a href="<%= track.video_url %>" target="_blank" rel="noopener noreferrer">Video</a><% } %>
+                        <%= new Date(track.uploaded_at).toLocaleDateString(lng === 'en' ? 'en-GB' : 'de-DE') %>
+                        <% if (track.track_page_url) { %> · <a href="<%= track.track_page_url %>" target="_blank" rel="noopener noreferrer"><%= t('dashboard.trackPageLink') %></a><% } %>
+                        <% if (track.video_url) { %> · <a href="<%= track.video_url %>" target="_blank" rel="noopener noreferrer"><%= t('dashboard.videoLink') %></a><% } %>
                     </p>
                 </div>
             </div>
 
             <details style="margin-top: 12px;">
-                <summary style="cursor:pointer; font-size:12px; color: var(--text-dim);">Bearbeiten / ersetzen</summary>
+                <summary style="cursor:pointer; font-size:12px; color: var(--text-dim);"><%= t('dashboard.editExpand') %></summary>
                 <form method="POST" action="/tracks/<%= track.id %>/replace" enctype="multipart/form-data" style="margin-top:12px;">
-                    <label>Track Name</label>
+                    <label><%= t('dashboard.trackName') %></label>
                     <input type="text" name="title" value="<%= track.title %>" required>
 
-                    <label>Genre</label>
+                    <label><%= t('dashboard.genre') %></label>
                     <input type="text" name="genre" value="<%= track.genre %>" required>
 
-                    <label>BPM (optional)</label>
+                    <label><%= t('dashboard.bpmOptional') %></label>
                     <input type="number" name="bpm" id="replace-bpm-<%= track.id %>" min="1" value="<%= track.bpm || '' %>">
 
-                    <label>URL Track Page</label>
+                    <label><%= t('dashboard.trackPageUrl') %></label>
                     <input type="text" name="track_page_url" value="<%= track.track_page_url || '' %>" required>
 
-                    <label>URL Video (optional)</label>
+                    <label><%= t('dashboard.videoUrlOptional') %></label>
                     <input type="text" name="video_url" value="<%= track.video_url || '' %>">
 
-                    <label>Bio / Lyrics (optional)</label>
+                    <label><%= t('dashboard.bioLyrics') %></label>
                     <textarea name="bio_lyrics" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= track.bio_lyrics || '' %></textarea>
 
-                    <label>Neue Audiodatei (optional — leer lassen, um die bestehende zu behalten)</label>
+                    <label><%= t('dashboard.newAudioOptional') %></label>
                     <input type="file" name="track" id="replace-track-<%= track.id %>" accept="audio/*">
 
-                    <label>Neues Track Image (optional)</label>
+                    <label><%= t('dashboard.newImageOptional') %></label>
                     <input type="file" name="image" accept="image/*">
 
                     <div class="track-actions">
-                        <button type="submit" class="btn-small">Speichern</button>
+                        <button type="submit" class="btn-small" id="replace-submit-<%= track.id %>" data-label-analyzing="<%= t('dashboard.analyzing') %>"><%= t('dashboard.save') %></button>
                     </div>
                 </form>
-                <script>wireBpmDetection('replace-track-<%= track.id %>', 'replace-bpm-<%= track.id %>');</script>
+                <script>wireBpmDetection('replace-track-<%= track.id %>', 'replace-bpm-<%= track.id %>', 'replace-submit-<%= track.id %>');</script>
             </details>
 
             <form method="POST" action="/tracks/<%= track.id %>/delete"
-                  onsubmit="return confirm('Track wirklich loeschen?');" style="margin-top:8px;">
-                <button type="submit" class="btn-danger btn-small">Loeschen</button>
+                  onsubmit="return confirm('<%= t('dashboard.deleteConfirm') %>');" style="margin-top:8px;">
+                <button type="submit" class="btn-danger btn-small"><%= t('dashboard.delete') %></button>
             </form>
         </div>
     <% }); %>
 
     <form method="POST" action="/logout" style="margin-top: 32px;">
-        <button type="submit" class="btn-quiet btn-small">Abmelden</button>
+        <button type="submit" class="btn-quiet btn-small"><%= t('dashboard.logout') %></button>
     </form>
 </div>
 </body>

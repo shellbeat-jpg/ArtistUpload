@@ -29,8 +29,9 @@ und keine Pro-Nutzer-Kontingente kennt.
 
 ## Installation auf deinem Hetzner-Server
 
-Diese Anwendung soll **neben** AzuraCast (Port Redirect auf 8080/8443) auf demselben Server laufen (Port 80/443), erreichbar ueber eine eigene Subdomain
-(`admin.luziferase.de`, `artists.luziferase.de`) per Reverse Proxy.
+Diese Anwendung soll **neben** AzuraCast auf demselben Server laufen, auf einem
+eigenen internen Port (Standard: 3500), erreichbar ueber eine eigene Subdomain
+(z.B. `uploads.luziferase.de`) per Reverse Proxy.
 
 ```bash
 # 1. Node.js installieren (falls noch nicht vorhanden)
@@ -144,3 +145,6 @@ in `lib/azuracast.js` (`setMetadata`) ergaenzt werden.
 - Diese Anwendung ersetzt keine Rechteklaerung mit den Artists selbst -- die
   Bestaetigung, dass hochgeladener Content frei von Rechten Dritter ist, solltet ihr
   weiterhin ausserhalb des Systems (z.B. schriftlich) einholen.
+  
+  i118n
+  npm install i18next i18next-http-middleware i18next-fs-backend

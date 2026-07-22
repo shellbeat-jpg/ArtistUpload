@@ -22,6 +22,14 @@ app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ limit: '500mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+const { i18next, middleware } = require('./lib/i18n');
+app.use(middleware.handle(i18next));
+app.use((req, res, next) => {
+   res.locals.t = req.t;
+   res.locals.lng = req.language;
+   next();
+});
+
 app.use(session({
     secret: process.env.SESSION_SECRET || 'bitte-in-.env-aendern',
     resave: false,

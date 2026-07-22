@@ -24,7 +24,7 @@ router.post('/login', (req, res) => {
     const artist = db.prepare('SELECT * FROM artists WHERE email = ? AND active = 1').get(email);
 
     if (!artist || !bcrypt.compareSync(password, artist.password_hash)) {
-        return res.render('artist/login', { error: 'E-Mail oder Passwort ist falsch.' });
+        return res.render('artist/login', { error: req.t('login.invalidCredentials') });
     }
 
     req.session.artistId = artist.id;
@@ -60,13 +60,13 @@ router.post('/profile', requireArtist, async (req, res) => {
     const { name, artist_page_url, contact_email, contact_phone, bio } = req.body;
 
     if (!name || !name.trim()) {
-        return res.redirect('/dashboard?err=Artist Name darf nicht leer sein.');
+        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileNameRequired'))}`);
     }
     if (!artist_page_url || !artist_page_url.trim()) {
-        return res.redirect('/dashboard?err=URL Artist Page ist ein Pflichtfeld.');
+        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileUrlRequired'))}`);
     }
     if (!contact_phone && !contact_email) {
-        return res.redirect('/dashboard?err=Bitte Telefon oder E-Mail als Kontakt angeben.');
+        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileContactRequired'))}`);
     }
 
     db.prepare(`
@@ -109,20 +109,20 @@ router.post('/profile', requireArtist, async (req, res) => {
     }
 
     const msg = syncFailed
-        ? 'Profil aktualisiert. Hinweis: Sync mit AzuraCast ist fuer mindestens einen bereits live geschalteten Track fehlgeschlagen, bitte im Admin-Bereich pruefen.'
-        : 'Profil aktualisiert.';
+        ? req.t('messages.profileUpdatedSyncFailed')
+        : req.t('messages.profileUpdated');
     res.redirect(`/dashboard?msg=${encodeURIComponent(msg)}`);
 });
 
 // --- Gemeinsame Validierung der Track-Zusatzfelder ---
 
-function validateTrackFields(body) {
+function validateTrackFields(req, body) {
     const errors = [];
-    if (!body.title || !body.title.trim()) errors.push('Track Name ist ein Pflichtfeld.');
-    if (!body.genre || !body.genre.trim()) errors.push('Genre ist ein Pflichtfeld.');
-    if (!body.track_page_url || !body.track_page_url.trim()) errors.push('URL Track Page ist ein Pflichtfeld.');
+    if (!body.title || !body.title.trim()) errors.push(req.t('messages.trackTitleRequired'));
+    if (!body.genre || !body.genre.trim()) errors.push(req.t('messages.trackGenreRequired'));
+    if (!body.track_page_url || !body.track_page_url.trim()) errors.push(req.t('messages.trackPageUrlRequired'));
     if (body.bpm && (isNaN(parseInt(body.bpm, 10)) || parseInt(body.bpm, 10) <= 0)) {
-        errors.push('BPM muss eine positive Zahl sein.');
+        errors.push(req.t('messages.bpmPositive'));
     }
     return errors;
 }
@@ -146,7 +146,7 @@ const analyzeUpload = multer({
 router.post('/tracks/analyze-bpm', requireArtist, (req, res) => {
     analyzeUpload.single('track')(req, res, async (err) => {
         if (err || !req.file) {
-            return res.status(400).json({ bpm: null, error: 'Keine gueltige Audiodatei.' });
+            return res.status(400).json({ bpm: null, error: req.t('messages.invalidAudioFile') });
         }
 
         try {
@@ -176,21 +176,21 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
 
         if (!trackFile) {
             cleanup();
-            return res.redirect('/dashboard?err=Keine Audiodatei ausgewaehlt.');
+            return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.noAudioFile'))}`);
         }
         if (!imageFile) {
             cleanup();
-            return res.redirect('/dashboard?err=Track Image ist ein Pflichtfeld.');
+            return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.imageRequired'))}`);
         }
 
-        const fieldErrors = validateTrackFields(req.body);
+        const fieldErrors = validateTrackFields(req, req.body);
         if (fieldErrors.length > 0) {
             cleanup();
             return res.redirect(`/dashboard?err=${encodeURIComponent(fieldErrors.join(' '))}`);
         }
 
         try {
-            validateImageSize(imageFile);
+            validateImageSize(req, imageFile);
         } catch (e) {
             cleanup();
             return res.redirect(`/dashboard?err=${encodeURIComponent(e.message)}`);
@@ -207,7 +207,7 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
             cleanup();
             const remaining = (artist.quota_mb - usedMb).toFixed(1);
             return res.redirect(
-                `/dashboard?err=${encodeURIComponent(`Kontingent ueberschritten. Noch verfuegbar: ${remaining} MB.`)}`
+                `/dashboard?err=${encodeURIComponent(req.t('messages.quotaExceededUpload', { remaining }))}`
             );
         }
 
@@ -231,7 +231,7 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
             fileSizeMb
         );
 
-        res.redirect('/dashboard?msg=Track hochgeladen und zur Pruefung eingereicht.');
+        res.redirect(`/dashboard?msg=${encodeURIComponent(req.t('messages.trackUploaded'))}`);
     });
 });
 
@@ -261,10 +261,10 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
 
         if (!track) {
             cleanupNew();
-            return res.redirect('/dashboard?err=Track nicht gefunden.');
+            return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.trackNotFound'))}`);
         }
 
-        const fieldErrors = validateTrackFields(req.body);
+        const fieldErrors = validateTrackFields(req, req.body);
         if (fieldErrors.length > 0) {
             cleanupNew();
             return res.redirect(`/dashboard?err=${encodeURIComponent(fieldErrors.join(' '))}`);
@@ -272,7 +272,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
 
         if (imageFile) {
             try {
-                validateImageSize(imageFile);
+                validateImageSize(req, imageFile);
             } catch (e) {
                 cleanupNew();
                 return res.redirect(`/dashboard?err=${encodeURIComponent(e.message)}`);
@@ -297,7 +297,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                 cleanupNew();
                 const remaining = (artist.quota_mb - usedMbWithoutThis).toFixed(1);
                 return res.redirect(
-                    `/dashboard?err=${encodeURIComponent(`Kontingent ueberschritten. Fuer diesen Austausch verfuegbar: ${remaining} MB.`)}`
+                    `/dashboard?err=${encodeURIComponent(req.t('messages.quotaExceededExchange', { remaining }))}`
                 );
             }
 
@@ -378,13 +378,13 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                 db.prepare('UPDATE tracks SET azuracast_media_id = ? WHERE id = ?').run(String(mediaId), track.id);
             } catch (e) {
                 console.error(`AzuraCast-Sync fuer Track ${track.id} (Bearbeitung) fehlgeschlagen:`, e.message);
-                syncNote = ' Hinweis: automatischer AzuraCast-Sync ist fehlgeschlagen, bitte im Admin-Bereich pruefen.';
+                syncNote = req.t('messages.syncFailedNote');
             }
         }
 
         const msg = wasSynced
-            ? `Track aktualisiert und mit AzuraCast synchronisiert.${syncNote}`
-            : 'Track aktualisiert.';
+            ? `${req.t('messages.trackUpdatedSynced')}${syncNote}`
+            : req.t('messages.trackUpdated');
         res.redirect(`/dashboard?msg=${encodeURIComponent(msg)}`);
     });
 });
@@ -397,7 +397,7 @@ router.post('/tracks/:id/delete', requireArtist, (req, res) => {
         .get(req.params.id, req.session.artistId);
 
     if (!track) {
-        return res.redirect('/dashboard?err=Track nicht gefunden.');
+        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.trackNotFound'))}`);
     }
 
     const localPath = path.join(__dirname, '..', 'uploads', track.filepath);
@@ -412,7 +412,7 @@ router.post('/tracks/:id/delete', requireArtist, (req, res) => {
     // dort bewusst bestehen, bis ein Admin ihn aktiv entfernt (routes/admin.js).
     db.prepare('DELETE FROM tracks WHERE id = ?').run(track.id);
 
-    res.redirect('/dashboard?msg=Track geloescht.');
+    res.redirect(`/dashboard?msg=${encodeURIComponent(req.t('messages.trackDeleted'))}`);
 });
 
 module.exports = router;

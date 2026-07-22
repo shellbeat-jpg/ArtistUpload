@@ -1,33 +1,36 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="<%= lng %>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Login — Luziferase Upload</title>
+    <title><%= t('login.title') %> — <%= t('common.stationName') %></title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <div class="wrap" style="max-width: 420px; padding-top: 96px;">
-        <div class="eyebrow">Luziferase on Air</div>
-        <h1>Artist-Login</h1>
-        <p class="subtitle">Zugang zur Verwaltung deiner Tracks.</p>
+        <div class="lang-switch" style="text-align:right; font-size:12px; margin-bottom:8px;">
+            <a href="?lng=de">DE</a> · <a href="?lng=en">EN</a>
+        </div>
+        <div class="eyebrow"><%= t('common.stationName') %></div>
+        <h1><%= t('login.title') %></h1>
+        <p class="subtitle"><%= t('login.subtitle') %></p>
 
         <div class="panel">
             <% if (error) { %>
                 <div class="msg error"><%= error %></div>
             <% } %>
             <form method="POST" action="/login">
-                <label for="email">E-Mail</label>
+                <label for="email"><%= t('login.email') %></label>
                 <input type="email" id="email" name="email" required autofocus>
 
-                <label for="password">Passwort</label>
+                <label for="password"><%= t('login.password') %></label>
                 <input type="password" id="password" name="password" required>
 
-                <button type="submit">Anmelden</button>
+                <button type="submit"><%= t('login.submit') %></button>
             </form>
         </div>
 
-        <a class="footer-link" href="/admin/login">Admin-Login →</a>
+        <a class="footer-link" href="/admin/login"><%= t('common.adminLoginLink') %></a>
     </div>
 </body>
 </html>
