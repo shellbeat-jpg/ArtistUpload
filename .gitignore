@@ -1,4 +1,5 @@
 node_modules/
+config/
 .env
 db/*.sqlite3
 db/*.sqlite3-*
@@ -6,3 +7,4 @@ uploads/*
 !uploads/.gitkeep
 public/track-images/*
 !public/track-images/.gitkeep
+data.txt

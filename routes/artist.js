@@ -10,6 +10,13 @@ const { requireArtist } = require('../lib/auth');
 const { upload, validateImageSize } = require('../lib/upload');
 const azuracast = require('../lib/azuracast');
 const { detectBpm } = require('../lib/bpm');
+const {
+    ALL_LINK_PLATFORMS,
+    getArtistLinksMap,
+    getArtistLinksForForm,
+    parseArtistLinksFromBody,
+    saveArtistLinks,
+} = require('../lib/artist-links');
 
 const router = express.Router();
 
@@ -49,6 +56,8 @@ router.get('/dashboard', requireArtist, (req, res) => {
         usedMb: usedMb.toFixed(1),
         quotaMb: artist.quota_mb,
         percentUsed: Math.min(100, Math.round((usedMb / artist.quota_mb) * 100)),
+        artistLinkSlots: getArtistLinksForForm(artist.id),
+        linkPlatforms: ALL_LINK_PLATFORMS,
         message: req.query.msg || null,
         error: req.query.err || null,
     });
@@ -69,6 +78,13 @@ router.post('/profile', requireArtist, async (req, res) => {
         return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileContactRequired'))}`);
     }
 
+    let links;
+    try {
+        links = parseArtistLinksFromBody(req, req.body);
+    } catch (e) {
+        return res.redirect(`/dashboard?err=${encodeURIComponent(e.message)}`);
+    }
+
     db.prepare(`
         UPDATE artists
         SET name = ?, artist_page_url = ?, contact_email = ?, contact_phone = ?, bio = ?
@@ -82,10 +98,14 @@ router.post('/profile', requireArtist, async (req, res) => {
         req.session.artistId
     );
 
+    saveArtistLinks(req.session.artistId, links);
+
     // Name und Artist-Page-URL fliessen in die Metadaten (Standardfeld "artist" bzw.
     // Custom Field url_artist) jedes bereits mit AzuraCast synchronisierten Tracks
-    // dieses Artists ein -- diese direkt nachziehen.
+    // dieses Artists ein -- diese direkt nachziehen. Die Streaming-/Social-Links
+    // ebenso, da sie als Custom Fields am Track (nicht am Artist) haengen.
     const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(req.session.artistId);
+    const artistLinksMap = getArtistLinksMap(artist.id);
     const syncedTracks = db
         .prepare('SELECT * FROM tracks WHERE artist_id = ? AND azuracast_media_id IS NOT NULL')
         .all(artist.id);
@@ -101,6 +121,7 @@ router.post('/profile', requireArtist, async (req, res) => {
                 bpm: track.bpm,
                 url_track: track.track_page_url,
                 url_artist: artist.artist_page_url,
+                links: artistLinksMap,
             });
         } catch (e) {
             console.error(`AzuraCast-Sync fuer Track ${track.id} (Profil-Update) fehlgeschlagen:`, e.message);
@@ -366,6 +387,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                     bpm: req.body.bpm ? parseInt(req.body.bpm, 10) : null,
                     url_track: req.body.track_page_url.trim(),
                     url_artist: artist.artist_page_url,
+                    links: getArtistLinksMap(artist.id),
                 });
 
                 if (imageFile) {

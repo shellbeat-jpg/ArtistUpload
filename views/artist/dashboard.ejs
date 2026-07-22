@@ -90,20 +90,42 @@
         <form method="POST" action="/profile">
             <label for="name"><%= t('dashboard.artistName') %></label>
             <input type="text" id="name" name="name" value="<%= artist.name %>" required>
-
+                 <!--
             <label for="artist_page_url"><%= t('dashboard.artistPageUrl') %></label>
             <input type="text" id="artist_page_url" name="artist_page_url" value="<%= artist.artist_page_url || '' %>" placeholder="https://..." required>
-
+           
             <label for="bio"><%= t('dashboard.bio') %></label>
             <textarea id="bio" name="bio" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= artist.bio || '' %></textarea>
-
+                               -->
             <label for="contact_email"><%= t('dashboard.contactEmail') %></label>
             <input type="email" id="contact_email" name="contact_email" value="<%= artist.contact_email || '' %>">
-
+            
+                            <!--
             <label for="contact_phone"><%= t('dashboard.contactPhone') %></label>
             <input type="text" id="contact_phone" name="contact_phone" value="<%= artist.contact_phone || '' %>">
-
+                  
             <p class="hint"><%= t('dashboard.contactHint') %></p>
+                    -->
+            <label><%= t('dashboard.linksHeading') %></label>
+                <!--
+            <p class="hint"><%= t('dashboard.linksHint') %></p>
+                      -->
+            <% for (let i = 0; i < 3; i++) {
+                const slot = artistLinkSlots[i];
+            %>
+                <div style="display:flex; gap:8px; margin-bottom:8px;">
+                    <select name="link_platform_<%= i + 1 %>" style="flex:0 0 150px;">
+                        <option value=""><%= t('dashboard.linkPlatformNone') %></option>
+                        <% linkPlatforms.forEach(function(platform) { %>
+                            <option value="<%= platform %>" <%= (slot && slot.platform === platform) ? 'selected' : '' %>>
+                                <%= t('platforms.' + platform) %>
+                            </option>
+                        <% }); %>
+                    </select>
+                    <input type="text" name="link_url_<%= i + 1 %>" placeholder="https://..." style="flex:1;"
+                           value="<%= slot ? slot.url : '' %>">
+                </div>
+            <% } %>
 
             <button type="submit" class="btn-quiet"><%= t('dashboard.saveProfile') %></button>
         </form>

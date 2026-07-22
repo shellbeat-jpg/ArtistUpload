@@ -1,0 +1,125 @@
+body.page-minimal {
+  background-size: unset;
+}
+
+#public-radio-player #lyrics-container {
+    margin-top: 0px;
+    padding: 10px;
+    background: rgba(0,0,0,0.05);
+    border-radius: 5px;
+    min-height: 90px;
+    /* max-height: 150px;
+    overflow-y: auto; */
+    font-size: 0.9em;
+    color: antiquewhite;
+}
+
+.lyrics-text {
+  /* mix-blend-mode: difference; */
+    color: #ffffff;
+    position: relative;
+    z-index: 1;
+}
+
+#public-radio-player .card .card-title{
+ color: rgba(108, 117, 125, 1);
+ font-weight:bold; 
+ background: linear-gradient(45deg, #f009, #ffef00f0);
+ -webkit-background-clip: text;
+ -webkit-text-fill-color: transparent; 
+ font-size: 4rem;
+ text-shadow: 
+    0 0 5px #fff,
+    0 0 10px #ff007f,
+    0 0 20px #ff007f,
+    0 0 40px #ff007f,
+    0 0 80px #ff007f;
+  text-align: center;
+}
+
+#public-radio-player .card-body{
+   /*background-color: #4f12f636;
+   background-color: #4f12f64f;
+  */
+  background-color: #4f12f621;
+}
+
+#public-radio-player .card {
+  --bs-card-bg: unset;
+}
+
+.url_artist{
+ /* margin-top: -17px;*/
+  margin-top: -2px;  
+  text-align: center; 
+}
+
+.btn_artist{
+  text-decoration: none;
+  align-items: center;
+  font-weight: 500;
+  font-size: 1rem;
+  margin-left: -5px;    
+  color: #e1e1e1 !important;
+  /*text-transform: uppercase;*/
+ /* darkgoldenrod */  
+/* rgba(var(--bs-secondary-rgb), var(--bs-text-opacity)) */  
+}
+
+.darkgoldenrod{
+  color: darkgoldenrod !important;
+}
+
+.now-playing-title  {
+  color: white;
+}
+.now-playing-artist {
+  color: white;
+}
+
+.buttons .btn {
+  padding-left: 0.4rem !important;
+  padding-right: 0.4rem !important;
+}
+
+#artist-links-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.artist-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  opacity: 0.8;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.artist-link-icon:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+.artist-link-icon img {
+  width: 100%;
+  height: 100%;
+  /* Simple Icons liefern dunkle/einfarbige SVGs -- an das helle Player-Theme angleichen */
+  filter: invert(1) brightness(2);
+}
+
+/* Fallback fuer Plattformen ohne verfuegbares Icon (z.B. hearthis.at, Basspistol):
+   Anfangsbuchstabe in einem runden Badge statt eines Logos. */
+.artist-link-icon--fallback {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.8rem;
+}

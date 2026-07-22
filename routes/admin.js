@@ -5,6 +5,7 @@ const fs = require('fs');
 const db = require('../db/connection');
 const { requireAdmin } = require('../lib/auth');
 const azuracast = require('../lib/azuracast');
+const { getArtistLinksMap } = require('../lib/artist-links');
 
 const router = express.Router();
 
@@ -155,6 +156,7 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
                 bpm: track.bpm,
                 url_track: track.track_page_url,
                 url_artist: artist.artist_page_url,
+                links: getArtistLinksMap(artist.id),
             });
 
             // Album-Cover hochladen
