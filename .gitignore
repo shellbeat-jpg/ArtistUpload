@@ -8,3 +8,13 @@ uploads/*
 public/track-images/*
 !public/track-images/.gitkeep
 data.txt
+.session
+db/-init.js
+db/artists.db
+db/migrations_artist_links.sql
+routes/-admin.js
+routes/-artist.js
+views/artist/-dashboard.ejs
+views/artist/-login.ejs
+
+

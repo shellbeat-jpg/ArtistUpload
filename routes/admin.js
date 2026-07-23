@@ -11,6 +11,21 @@ const router = express.Router();
 
 // --- Login / Logout ---
 
+// Unterstützt nun direkten Link-Klick (GET) und Formular-Senden (POST)
+// Vorher: router.post('/admin/logout', ...)
+// Jetzt: Nutzt .all (für Links und Formulare) und korrigiert den Pfad auf '/' (da '/admin' von der server.js kommt)
+// Erlaubt Links (GET) und Formulare (POST) exakt auf dem Pfad /admin/logout
+router.all('/admin/logout', (req, res) => {
+    if (req.session) {
+        req.session.destroy(() => {
+            res.redirect('/admin/login');
+        });
+    } else {
+        res.redirect('/admin/login');
+    }
+});
+
+
 router.get('/admin/login', (req, res) => {
     res.render('admin/login', { error: null });
 });
@@ -27,9 +42,9 @@ router.post('/admin/login', (req, res) => {
     res.redirect('/admin');
 });
 
-router.post('/admin/logout', (req, res) => {
-    req.session.destroy(() => res.redirect('/admin/login'));
-});
+//router.post('/admin/logout', (req, res) => {
+//    req.session.destroy(() => res.redirect('/admin/login'));
+//});
 
 // --- Uebersicht ---
 
