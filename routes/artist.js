@@ -60,8 +60,8 @@ router.post('/login', (req, res) => {
     const { email, password } = req.body;
     
     // Prüft, ob der Artist existiert
-    const artist = db.prepare('SELECT * FROM artists WHERE email = ?').get(email);
-
+    const artist = db.prepare('SELECT * FROM artists WHERE email = ? AND station_id = ?').get(email, req.currentStation.id);
+ 
     if (!artist || !bcrypt.compareSync(password, artist.password_hash)) {
         return res.render('artist/login', { error: req.t('login.invalidCredentials'), successMessage: null });
     }
@@ -186,7 +186,9 @@ router.post('/register', async (req, res) => {
     }
 
     // 3. E-Mail-Duplikatsprüfung
-    const existingArtist = db.prepare('SELECT id FROM artists WHERE email = ?').get(email);
+    // In der Duplikatsprüfung:
+    const existingArtist = db.prepare('SELECT id FROM artists WHERE email = ? AND station_id = ?').get(email, req.currentStation.id);
+
     if (existingArtist) {
         return res.render('artist/register', { 
             turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
@@ -220,8 +222,8 @@ router.post('/register', async (req, res) => {
     try {
         // Daten in die Tabelle einfügen (active = 0)
         const info = db.prepare(`
-            INSERT INTO artists (name, email, contact_phone, artist_page_url, bio, password_hash, active, quota_mb, verification_token)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+            INSERT INTO artists (name, email, contact_phone, artist_page_url, bio, password_hash, active, quota_mb, verification_token, station_id)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
         `).run(
             (artist_name || '').trim(),
             email.trim(),
@@ -230,7 +232,8 @@ router.post('/register', async (req, res) => {
             (bio || '').trim(),
             passwordHash,
             defaultQuotaMb,
-            verificationToken
+            verificationToken,
+            req.currentStation.id
         );
 
         // 6. Die neue Artist-ID abgreifen und Social-Media Links verknüpfen
@@ -239,12 +242,13 @@ router.post('/register', async (req, res) => {
 
         // 7. Aktivierungs-E-Mail absenden
         const verificationLink = `${process.env.SITE_URL}/verify/${verificationToken}`;
+        const stationName = req.currentStation.name;
         const mailOptions = {
             from: process.env.SMTP_FROM,
             to: email,
-            subject: req.t('email.subjectVerify'),
+            subject: `[${stationName}] ${req.t('email.subjectVerify', { defaultValue: 'Aktivierung deines Accounts' })}`,
             text: `${req.t('email.textVerify')}\n\n${verificationLink}`
-        };
+        };   
 
         transporter.sendMail(mailOptions, (mailErr) => {
             if (mailErr) {
@@ -279,8 +283,10 @@ router.get('/verify/:token', (req, res) => {
 
     // Account aktivieren (active = 1) und Token entfernen
     db.prepare('UPDATE artists SET active = 1, verification_token = NULL WHERE id = ?').run(artist.id);
+   
+    req.session.flashMessage = req.t('register.successAccountActivated') || 'Dein Account wurde erfolgreich aktiviert. Du kannst dich jetzt einloggen.';
 
-    res.redirect(`/login?msg=${encodeURIComponent(req.t('register.successVerified'))}`);
+    res.redirect(`/login`);
 });
 
 

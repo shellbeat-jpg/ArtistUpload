@@ -8,6 +8,10 @@
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body>
+<% 
+  // Falls der Server formData vergisst, fangen wir das hier ab
+  var safeData = (typeof formData !== 'undefined' && formData) ? formData : {}; 
+%>
 <div class="wrap">
     <!-- Sprachumschalter -->
     <div class="lang-switch" style="text-align:right; font-size:12px; margin-bottom:8px;">
@@ -28,19 +32,19 @@
         <form method="POST" action="/register">
             
             <label for="artist_name"><%= t('dashboard.artistName') %> *</label>
-            <input type="text" id="artist_name" name="artist_name" value="<%= formData.artist_name || '' %>" required autocomplete="username">
+            <input type="text" id="artist_name" name="artist_name" value="<%= safeData.artist_name || '' %>" required autocomplete="username">
 
             <label for="email"><%= t('dashboard.contactEmail') %> *</label>
-            <input type="email" id="email" name="email"  value="<%= formData.email || '' %>" required autocomplete="email">
-
+            <input type="email" id="email" name="email"  value="<%= safeData.email || '' %>" required autocomplete="email">
+                   <!-- 
             <label for="contact_phone"><%= t('dashboard.contactPhone') || 'Kontakt Telefon (optional)' %></label>
-            <input type="text" id="contact_phone" name="contact_phone" value="<%= formData.contact_phone || '' %>">
-
+            <input type="text" id="contact_phone" name="contact_phone" value="<%= safeData.contact_phone || '' %>">
+                            -->
             <label for="artist_page_url"><%= t('dashboard.artistPageUrl') %> *</label>
-            <input type="text" id="artist_page_url" name="artist_page_url" value="<%= formData.artist_page_url || '' %>"  placeholder="https://..." required>
+            <input type="text" id="artist_page_url" name="artist_page_url" value="<%= safeData.artist_page_url || '' %>"  placeholder="https://..." required>
 
             <label for="bio"><%= t('dashboard.bio') %></label>
-            <textarea id="bio" name="bio" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= formData.bio || '' %></textarea>
+            <textarea id="bio" name="bio" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= safeData.bio || '' %></textarea>
 
             <p class="hint" style="margin-top: 12px; margin-bottom: 24px;"><%= t('dashboard.contactHint') %></p>
 
@@ -49,8 +53,8 @@
             <p class="hint" style="margin-bottom: 12px;"><%= t('dashboard.linksHint') %></p>
             
             <% for (let i = 0; i < 3; i++) { 
-                const submittedPlatform = formData['link_platform_' + (i + 1)] || '';
-                const submittedUrl = formData['link_url_' + (i + 1)] || '';
+                const submittedPlatform = safeData['link_platform_' + (i + 1)] || '';
+                const submittedUrl = safeData['link_url_' + (i + 1)] || '';
             %>
                 <div style="display:flex; gap:8px; margin-bottom:8px;">
                     <select name="link_platform_<%= i + 1 %>" style="flex:0 0 150px;">

@@ -5,6 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><%= t('login.title') %> — <%= t('common.stationName') %></title>
     <link rel="stylesheet" href="/style.css">
+    
+    <style>
+        body {
+            <% if (currentStation && currentStation.background_image) { %>
+                background-image: linear-gradient(rgba(10, 10, 13, 0.85), rgba(10, 10, 13, 0.95)), 
+                                  url('/station-branding/<%= currentStation.background_image %>');
+                background-size: cover;
+                background-position: center;
+                background-attachment: fixed;
+            <% } %>
+        }
+        <% if (currentStation && currentStation.accent_color) { %>
+            button, .btn-primary, .quota-bar-fill {
+                background: <%= currentStation.accent_color %> !important;
+                border-color: <%= currentStation.accent_color %> !important;
+            }
+        <% } %>
+    </style>
+    
 </head>
 <body>
     <div class="wrap" style="max-width: 420px; padding-top: 96px;">
@@ -12,7 +31,7 @@
             <a href="?lng=de">DE</a> · <a href="?lng=en">EN</a>
         </div>
         <div class="eyebrow"><%= t('common.stationName') %></div>
-        <h1><%= t('login.title') %></h1>
+        <h1><%= currentStation.title_branding || t('login.title') %></h1>
         
          <!-- Hierher verschoben: Erfolgsmeldung direkt unter dem Titel -->
           <% if (typeof successMessage !== 'undefined' && successMessage) { %>
