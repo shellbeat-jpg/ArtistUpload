@@ -90,15 +90,15 @@
         <form method="POST" action="/profile">
             <label for="name"><%= t('dashboard.artistName') %></label>
             <input type="text" id="name" name="name" value="<%= artist.name %>" required>
-                 <!--
+                 <!--       -->
             <label for="artist_page_url"><%= t('dashboard.artistPageUrl') %></label>
             <input type="text" id="artist_page_url" name="artist_page_url" value="<%= artist.artist_page_url || '' %>" placeholder="https://..." required>
            
             <label for="bio"><%= t('dashboard.bio') %></label>
             <textarea id="bio" name="bio" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= artist.bio || '' %></textarea>
-                               -->
-            <label for="contact_email"><%= t('dashboard.contactEmail') %></label>
-            <input type="email" id="contact_email" name="contact_email" value="<%= artist.contact_email || '' %>">
+                              
+            <label for="email"><%= t('login.email') %></label>
+            <input type="email" id="email" name="email" value="<%= artist.email || '' %>">
             
                             <!--
             <label for="contact_phone"><%= t('dashboard.contactPhone') %></label>

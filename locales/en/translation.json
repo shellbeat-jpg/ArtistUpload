@@ -9,7 +9,28 @@
     "email": "Email",
     "password": "Password",
     "submit": "Log in",
-    "invalidCredentials": "Email or password is incorrect."
+    "invalidCredentials": "Email or password is incorrect.",
+    "register_button": "Registration",
+    "accountNotActiveYet": "Your account has not been verified via email yet."
+  },
+  "register": {
+    "title": "Register as Artist",
+    "section_profile": "Profile Information",
+    "section_security": "Security & Password",
+    "password": "Password",
+    "password_confirm": "Confirm Password",
+    "submit": "Create Account",
+    "back_to_login": "Back to Login",
+    "errorPasswordMatch": "Passwords do not match.",
+    "errorEmailExists": "This email address is already registered.",
+    "errorCaptcha": "Human verification (Captcha) failed.",
+    "errorInvalidToken": "Invalid or expired verification link.",
+    "successMailSent": "Registration successful! Please check your email inbox to activate your account.",
+    "successVerified": "Your account has been successfully activated. You can now log in."
+  },
+  "email": {
+    "subjectVerify": "Activate your Artist Account - Luziferase on Air",
+    "textVerify": "Hello!\n\nPlease click the following link to complete your registration in the Artist Upload Portal:"
   },
   "dashboard": {
     "subtitle": "Your tracks, your details.",

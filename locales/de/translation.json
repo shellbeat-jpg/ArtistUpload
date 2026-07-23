@@ -1,7 +1,8 @@
 {
   "common": {
     "stationName": "Luziferase on Air",
-    "adminLoginLink": "Admin-Login →"
+    "adminLoginLink": "Admin-Login →",
+    "registerButton": "Registrierung →"
   },
   "login": {
     "title": "Artist-Login",
@@ -9,7 +10,28 @@
     "email": "E-Mail",
     "password": "Passwort",
     "submit": "Anmelden",
-    "invalidCredentials": "E-Mail oder Passwort ist falsch."
+    "invalidCredentials": "E-Mail oder Passwort ist falsch.",
+    "register_button": "Registrierung",
+    "accountNotActiveYet": "Dein Account ist noch nicht per E-Mail bestätigt."
+  },
+  "register": {
+    "title": "Als Artist registrieren",
+    "section_profile": "Profil-Informationen",
+    "section_security": "Sicherheit & Passwort",
+    "password": "Passwort",
+    "password_confirm": "Passwort wiederholen",
+    "submit": "Konto erstellen",
+    "back_to_login": "Zurück zum Login",
+    "errorPasswordMatch": "Die Passwörter stimmen nicht überein.",
+    "errorEmailExists": "Diese E-Mail-Adresse ist bereits registriert.",
+    "errorCaptcha": "Mensch-Verifikation (Captcha) fehlgeschlagen.",
+    "errorInvalidToken": "Ungültiger oder bereits abgelaufener Bestätigungslink.",
+    "successMailSent": "Registrierung erfolgreich! Bitte prüfe dein E-Mail-Postfach, um deinen Account zu aktivieren.",
+    "successVerified": "Dein Account wurde erfolgreich aktiviert. Du kannst dich jetzt einloggen."
+  },
+  "email": {
+    "subjectVerify": "Aktiviere deinen Artist-Account - Luziferase on Air",
+    "textVerify": "Hallo!\n\nBitte klicke auf den folgenden Link, um deine Registrierung im Artist-Upload-Portal abzuschließen:"
   },
   "dashboard": {
     "subtitle": "Deine Tracks, deine Angaben.",

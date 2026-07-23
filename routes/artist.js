@@ -20,18 +20,55 @@ const {
 
 const router = express.Router();
 
-// --- Login / Logout ---
+require('dotenv').config();
 
-router.get('/login', (req, res) => {
-    res.render('artist/login', { error: null });
+// Middleware: Weiterleitung falls bereits eine aktive Session existiert
+function redirectIfLoggedIn(req, res, next) {
+    if (req.session && req.session.artistId) {
+        return res.redirect('/dashboard');
+    }
+    next();
+}
+
+// Globale Middleware: Stellt lng und req automatisch in JEDEM EJS-Template bereit
+router.use((req, res, next) => {
+    res.locals.lng = req.language || 'de'; // i18next Sprache bereitstellen
+    res.locals.req = req;                  // req-Objekt bereitstellen
+    next();
+});
+
+// --- Login / Logout ---
+router.get('/login', redirectIfLoggedIn, (req, res) => {
+    // Falls Meldungen über Redirects reinkommen (z.B. nach erfolgreicher Registrierung)
+    const errorMessage = req.query.err ? req.query.err : null;
+    
+    // Flash-Message aus der Session holen und direkt löschen
+    const successMessage = req.session.flashMessage || null;
+    if (req.session.flashMessage) {
+        delete req.session.flashMessage;
+    }
+    
+    res.render('artist/login', { 
+        error: errorMessage, 
+        successMessage: successMessage//, 
+        // lng: req.language, // Wichtig für <html lang="<%= lng %>">
+        // req: req 
+    });
 });
 
 router.post('/login', (req, res) => {
     const { email, password } = req.body;
-    const artist = db.prepare('SELECT * FROM artists WHERE email = ? AND active = 1').get(email);
+    
+    // Prüft, ob der Artist existiert
+    const artist = db.prepare('SELECT * FROM artists WHERE email = ?').get(email);
 
     if (!artist || !bcrypt.compareSync(password, artist.password_hash)) {
-        return res.render('artist/login', { error: req.t('login.invalidCredentials') });
+        return res.render('artist/login', { error: req.t('login.invalidCredentials'), successMessage: null });
+    }
+
+    // WICHTIG: Prüft, ob der Account über die E-Mail-Bestätigung aktiviert wurde
+    if (artist.active !== 1) {
+        return res.render('artist/login', { error: req.t('login.accountNotActiveYet'), successMessage: null });
     }
 
     req.session.artistId = artist.id;
@@ -41,6 +78,211 @@ router.post('/login', (req, res) => {
 router.post('/logout', (req, res) => {
     req.session.destroy(() => res.redirect('/login'));
 });
+
+
+// --- NEU: Registrierung (Self-Signup) ---  
+const nodemailer = require('nodemailer');
+
+
+
+// Werte strikt von eventuellen Leerzeichen oder unsichtbaren Zeichen befreien
+const cleanSmtpHost = (process.env.SMTP_HOST || '://brevo.com').trim();
+const cleanSmtpUser = (process.env.SMTP_USER || '').trim();
+const cleanSmtpPass = (process.env.SMTP_PASS || '').trim();
+
+// SMTP-Transporter für die Verifikations-Mails initialisieren
+const transporter = nodemailer.createTransport({
+    host: cleanSmtpHost,
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: process.env.SMTP_PORT === '465', // false für Port 587 (STARTTLS)
+    auth: {
+        user: cleanSmtpUser,
+        pass: cleanSmtpPass
+    }
+});
+
+ 
+// GET: Registrierungsseite anzeigen
+router.get('/register', redirectIfLoggedIn, (req, res) => {
+    res.render('artist/register', { 
+        turnstileSiteKey: process.env.TURNSTILE_SITE_KEY,
+        linkPlatforms: ALL_LINK_PLATFORMS, // <-- DAS FEHLTE HIER!
+        error: null,
+        // Leeres Datenobjekt übergeben, damit das Template beim Erstaufruf nicht abstürzt
+        formData: {} //,
+        // lng: req.language, // Damit <html lang="<%= lng %>"> funktioniert
+        // req: req
+    });
+});
+
+// POST: Registrierungsdaten verarbeiten
+router.post('/register', async (req, res) => {
+    const { 
+        artist_name, 
+        email, 
+        contact_phone, 
+        artist_page_url, 
+        bio, 
+        password, 
+        password_confirm, 
+        'cf-turnstile-response': turnstileResponse 
+    } = req.body;
+
+    // Hilfsfunktion, um Tipparbeit bei Fehlern zu sparen
+    const renderError = (errorKey) => {
+        return res.render('artist/register', { 
+            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
+            linkPlatforms: ALL_LINK_PLATFORMS,
+            error: errorKey.includes('.') ? req.t(errorKey) : errorKey,
+            formData: req.body // Hier werden die Eingaben zurückgesendet!
+        });
+    };
+
+        // 1. Cloudflare Turnstile Captcha serverseitig verifizieren
+    try {
+        const verifyUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+        
+        // Cloudflare verlangt zwingend x-www-form-urlencoded für den siteverify-Endpunkt
+        const verifyParams = new URLSearchParams();
+        verifyParams.append('secret', process.env.TURNSTILE_SECRET_KEY.trim());
+        verifyParams.append('response', (turnstileResponse || '').trim());
+
+        const verifyResponse = await fetch(verifyUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: verifyParams
+        });
+        
+        const outcome = await verifyResponse.json();
+        
+        if (!outcome.success) {
+            console.error("Turnstile verweigerte Freigabe. Fehlercodes:", outcome['error-codes']);
+            return res.render('artist/register', { 
+                turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
+                linkPlatforms: ALL_LINK_PLATFORMS,
+                error: req.t('register.errorCaptcha')//,
+                // lng: req.language
+            });
+        }
+    } catch (err) {
+        console.error("Netzwerkfehler beim Cloudflare-Siteverify:", err.message);
+        return res.render('artist/register', { 
+            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
+            linkPlatforms: ALL_LINK_PLATFORMS,
+            error: "Captcha Connection Error"//,
+            // lng: req.language
+        });
+    }
+
+
+    // 2. Passwort-Validierung
+    if (password !== password_confirm) {
+        return res.render('artist/register', { 
+            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
+            linkPlatforms: ALL_LINK_PLATFORMS,
+            error: req.t('register.errorPasswordMatch')//,
+            // lng: req.language
+        });
+    }
+
+    // 3. E-Mail-Duplikatsprüfung
+    const existingArtist = db.prepare('SELECT id FROM artists WHERE email = ?').get(email);
+    if (existingArtist) {
+        return res.render('artist/register', { 
+            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
+            linkPlatforms: ALL_LINK_PLATFORMS,
+            error: req.t('register.errorEmailExists')//,
+            // lng: req.language
+        });
+    }
+
+    // 4. Social-Media Links aus dem Request-Body auslesen (Nutzt deine lib/artist-links.js Logik)
+    let links;
+    try {
+        links = parseArtistLinksFromBody(req, req.body);
+    } catch (e) {
+        return res.render('artist/register', { 
+            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
+            linkPlatforms: ALL_LINK_PLATFORMS,
+            error: e.message//,
+            // lng: req.language
+        });
+    }
+
+    // 5. Passwort hashen & Token generieren
+    const salt = bcrypt.genSaltSync(10);
+    const passwordHash = bcrypt.hashSync(password, salt);
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    
+    // Standard-Quota festlegen (z.B. 500 MB)
+    const defaultQuotaMb = 500; 
+
+    try {
+        // Daten in die Tabelle einfügen (active = 0)
+        const info = db.prepare(`
+            INSERT INTO artists (name, email, contact_phone, artist_page_url, bio, password_hash, active, quota_mb, verification_token)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+        `).run(
+            (artist_name || '').trim(),
+            email.trim(),
+            (contact_phone || '').trim(),
+            (artist_page_url || '').trim(),
+            (bio || '').trim(),
+            passwordHash,
+            defaultQuotaMb,
+            verificationToken
+        );
+
+        // 6. Die neue Artist-ID abgreifen und Social-Media Links verknüpfen
+        const newArtistId = info.lastInsertRowid;
+        saveArtistLinks(newArtistId, links);
+
+        // 7. Aktivierungs-E-Mail absenden
+        const verificationLink = `${process.env.SITE_URL}/verify/${verificationToken}`;
+        const mailOptions = {
+            from: process.env.SMTP_FROM,
+            to: email,
+            subject: req.t('email.subjectVerify'),
+            text: `${req.t('email.textVerify')}\n\n${verificationLink}`
+        };
+
+        transporter.sendMail(mailOptions, (mailErr) => {
+            if (mailErr) {
+                console.error("Registrierungs-Mail fehlgeschlagen:", mailErr.message);
+            }    
+            req.session.flashMessage = req.t('register.successMailSent');
+            res.redirect('/login');
+        });
+
+    } catch (dbError) {
+        console.error("DB-Insert Error during registration:", dbError.message);
+        return res.render('artist/register', { 
+            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
+            linkPlatforms: ALL_LINK_PLATFORMS,
+            error: "Database Error"//,
+            // lng: req.language
+        });
+    }
+});
+ 
+
+// GET: Bestätigungs-Link validieren
+router.get('/verify/:token', (req, res) => {
+    const { token } = req.params;
+
+    // Suchen nach dem Artist mit diesem Token
+    const artist = db.prepare('SELECT id FROM artists WHERE verification_token = ?').get(token);
+
+    if (!artist) {
+        return res.redirect(`/login?err=${encodeURIComponent(req.t('register.errorInvalidToken'))}`);
+    }
+
+    // Account aktivieren (active = 1) und Token entfernen
+    db.prepare('UPDATE artists SET active = 1, verification_token = NULL WHERE id = ?').run(artist.id);
+
+    res.redirect(`/login?msg=${encodeURIComponent(req.t('register.successVerified'))}`);
+});
+
 
 // --- Dashboard ---
 
@@ -66,7 +308,7 @@ router.get('/dashboard', requireArtist, (req, res) => {
 // --- Eigenes Profil aktualisieren (Artist Name, Artist Page URL, Kontakt, Bio) ---
 
 router.post('/profile', requireArtist, async (req, res) => {
-    const { name, artist_page_url, contact_email, contact_phone, bio } = req.body;
+    const { name, artist_page_url, email, contact_phone, bio } = req.body;
 
     if (!name || !name.trim()) {
         return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileNameRequired'))}`);
@@ -74,10 +316,16 @@ router.post('/profile', requireArtist, async (req, res) => {
     if (!artist_page_url || !artist_page_url.trim()) {
         return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileUrlRequired'))}`);
     }
-    if (!contact_phone && !contact_email) {
+    if (!contact_phone && !email) {
         return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileContactRequired'))}`);
     }
-
+    
+    // WICHTIG: Prüfen, ob die neue E-Mail bereits von einem ANDEREN Artist genutzt wird
+    const emailConflict = db.prepare('SELECT id FROM artists WHERE email = ? AND id != ?').get(email.trim(), req.session.artistId);
+    if (emailConflict) {
+        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('register.errorEmailExists'))}`);
+    }
+    
     let links;
     try {
         links = parseArtistLinksFromBody(req, req.body);
@@ -87,12 +335,12 @@ router.post('/profile', requireArtist, async (req, res) => {
 
     db.prepare(`
         UPDATE artists
-        SET name = ?, artist_page_url = ?, contact_email = ?, contact_phone = ?, bio = ?
+        SET name = ?, artist_page_url = ?, email = ?, contact_phone = ?, bio = ?
         WHERE id = ?
     `).run(
         name.trim(),
         artist_page_url.trim(),
-        (contact_email || '').trim(),
+        (email || '').trim(),
         (contact_phone || '').trim(),
         (bio || '').trim(),
         req.session.artistId
