@@ -14,8 +14,7 @@ if (!fs.existsSync(dbPath)) {
 const Database = require('better-sqlite3');
 const db = new Database(dbPath);
 
-const artistRoutes = require('./routes/artist');
-const adminRoutes = require('./routes/admin');
+
 
 const app = express();
 
@@ -25,6 +24,9 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ limit: '500mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+const artistRoutes = require('./routes/artist');
+const adminRoutes = require('./routes/admin');
 
 app.use(session({
     secret: process.env.SESSION_SECRET || 'bitte-in-.env-aendern',

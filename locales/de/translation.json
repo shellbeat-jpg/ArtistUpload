@@ -27,7 +27,8 @@
     "errorCaptcha": "Mensch-Verifikation (Captcha) fehlgeschlagen.",
     "errorInvalidToken": "Ungültiger oder bereits abgelaufener Bestätigungslink.",
     "successMailSent": "Registrierung erfolgreich! Bitte prüfe dein E-Mail-Postfach, um deinen Account zu aktivieren.",
-    "successVerified": "Dein Account wurde erfolgreich aktiviert. Du kannst dich jetzt einloggen."
+    "successVerified": "Dein Account wurde erfolgreich aktiviert. Du kannst dich jetzt einloggen.",
+    "successAccountActivated": "Dein Account wurde erfolgreich aktiviert. Du kannst dich jetzt einloggen."       
   },
   "email": {
     "subjectVerify": "Aktiviere deinen Artist-Account - Luziferase on Air",
@@ -51,13 +52,13 @@
     "trackName": "Track Name",
     "genre": "Genre (optional)",
     "bpmOptional": "BPM (optional)",
-    "trackPageUrl": "URL Track Page",
+    "trackPageUrl": "URL Track Page (optional)",
     "videoUrlOptional": "URL Video (optional)",
     "bioLyrics": "Bio / Lyrics / Whatever (Freitext, optional)",
     "audioFile": "Audiodatei (FLAC / WAV / MP3)",
     "trackImage": "Track Image",
     "uploadSubmit": "Hochladen",
-    "analyzing": "Upload / Analyse",
+    "analyzing": "Track Analyse - bitte warten..",
     "tracksHeading": "Deine Tracks",
     "noTracks": "Noch keine Tracks hochgeladen.",
     "rejectReason": "Grund:",

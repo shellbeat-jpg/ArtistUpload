@@ -20,8 +20,13 @@ const {
 
 const router = express.Router();
 
+const audioMetadataParser  = require('music-metadata');
+ 
 require('dotenv').config();
 
+// Ermittelt die Basis-Konfiguration
+const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+ 
 // Middleware: Weiterleitung falls bereits eine aktive Session existiert
 function redirectIfLoggedIn(req, res, next) {
     if (req.session && req.session.artistId) {
@@ -106,12 +111,9 @@ const transporter = nodemailer.createTransport({
 router.get('/register', redirectIfLoggedIn, (req, res) => {
     res.render('artist/register', { 
         turnstileSiteKey: process.env.TURNSTILE_SITE_KEY,
-        linkPlatforms: ALL_LINK_PLATFORMS, // <-- DAS FEHLTE HIER!
+        linkPlatforms: ALL_LINK_PLATFORMS, 
         error: null,
-        // Leeres Datenobjekt übergeben, damit das Template beim Erstaufruf nicht abstürzt
-        formData: {} //,
-        // lng: req.language, // Damit <html lang="<%= lng %>"> funktioniert
-        // req: req
+        formData: {} 
     });
 });
 
@@ -128,21 +130,19 @@ router.post('/register', async (req, res) => {
         'cf-turnstile-response': turnstileResponse 
     } = req.body;
 
-    // Hilfsfunktion, um Tipparbeit bei Fehlern zu sparen
+    // Hilfsfunktion: Übergibt req.body ALS formData an das Template
     const renderError = (errorKey) => {
         return res.render('artist/register', { 
             turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
             linkPlatforms: ALL_LINK_PLATFORMS,
             error: errorKey.includes('.') ? req.t(errorKey) : errorKey,
-            formData: req.body // Hier werden die Eingaben zurückgesendet!
+            formData: req.body // Hier fließen die Eingaben zurück ans Template!
         });
     };
 
-        // 1. Cloudflare Turnstile Captcha serverseitig verifizieren
+    // 1. Cloudflare Turnstile Captcha serverseitig verifizieren
     try {
         const verifyUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
-        
-        // Cloudflare verlangt zwingend x-www-form-urlencoded für den siteverify-Endpunkt
         const verifyParams = new URLSearchParams();
         verifyParams.append('secret', process.env.TURNSTILE_SECRET_KEY.trim());
         verifyParams.append('response', (turnstileResponse || '').trim());
@@ -157,58 +157,36 @@ router.post('/register', async (req, res) => {
         
         if (!outcome.success) {
             console.error("Turnstile verweigerte Freigabe. Fehlercodes:", outcome['error-codes']);
-            return res.render('artist/register', { 
-                turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
-                linkPlatforms: ALL_LINK_PLATFORMS,
-                error: req.t('register.errorCaptcha')//,
-                // lng: req.language
-            });
+            // REPARIERT: Nutzt jetzt die Hilfsfunktion
+            return renderError('register.errorCaptcha');
         }
     } catch (err) {
         console.error("Netzwerkfehler beim Cloudflare-Siteverify:", err.message);
-        return res.render('artist/register', { 
-            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
-            linkPlatforms: ALL_LINK_PLATFORMS,
-            error: "Captcha Connection Error"//,
-            // lng: req.language
-        });
+        // REPARIERT: Nutzt jetzt die Hilfsfunktion
+        return renderError("Captcha Connection Error");
     }
-
 
     // 2. Passwort-Validierung
     if (password !== password_confirm) {
-        return res.render('artist/register', { 
-            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
-            linkPlatforms: ALL_LINK_PLATFORMS,
-            error: req.t('register.errorPasswordMatch')//,
-            // lng: req.language
-        });
+        // REPARIERT: Nutzt jetzt die Hilfsfunktion
+        return renderError('register.errorPasswordMatch');
     }
 
     // 3. E-Mail-Duplikatsprüfung
-    // In der Duplikatsprüfung:
     const existingArtist = db.prepare('SELECT id FROM artists WHERE email = ? AND station_id = ?').get(email, req.currentStation.id);
 
     if (existingArtist) {
-        return res.render('artist/register', { 
-            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
-            linkPlatforms: ALL_LINK_PLATFORMS,
-            error: req.t('register.errorEmailExists')//,
-            // lng: req.language
-        });
+        // REPARIERT: Nutzt jetzt die Hilfsfunktion
+        return renderError('register.errorEmailExists');
     }
 
-    // 4. Social-Media Links aus dem Request-Body auslesen (Nutzt deine lib/artist-links.js Logik)
+    // 4. Social-Media Links auslesen
     let links;
     try {
         links = parseArtistLinksFromBody(req, req.body);
     } catch (e) {
-        return res.render('artist/register', { 
-            turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
-            linkPlatforms: ALL_LINK_PLATFORMS,
-            error: e.message//,
-            // lng: req.language
-        });
+        // REPARIERT: Nutzt jetzt die Hilfsfunktion
+        return renderError(e.message);
     }
 
     // 5. Passwort hashen & Token generieren
@@ -298,9 +276,24 @@ router.get('/dashboard', requireArtist, (req, res) => {
 
     const usedMb = tracks.reduce((sum, t) => sum + t.filesize_mb, 0);
 
+    // Sekunden in Minuten umrechnen für das Dashboard
+    const totalUsedSeconds = db
+        .prepare('SELECT COALESCE(SUM(duration_seconds), 0) AS used FROM tracks WHERE artist_id = ?')
+        .get(req.session.artistId).used;
+
+    const usedMinutes = totalUsedSeconds / 60;
+    const maxMinutes = artist.quota_minutes || 60;
+    const percentage = Math.min(100, (usedMinutes / maxMinutes) * 100);
+ 
     res.render('artist/dashboard', {
         artist,
         tracks,
+        // NEU: Diese Werte gehen direkt ans EJS-Template für die visuelle Anzeige
+        quota: {
+            used: usedMinutes.toFixed(1),
+            max: maxMinutes,
+            percent: percentage.toFixed(0)
+        },
         usedMb: usedMb.toFixed(1),
         quotaMb: artist.quota_mb,
         percentUsed: Math.min(100, Math.round((usedMb / artist.quota_mb) * 100)),
@@ -389,13 +382,37 @@ router.post('/profile', requireArtist, async (req, res) => {
     res.redirect(`/dashboard?msg=${encodeURIComponent(msg)}`);
 });
 
+ 
+// GET: Audio-Stream im Artist-Bereich (Korrigiert für das /new- & Playlist-System)
+router.get('/tracks/:id/stream/:filename', requireArtist, (req, res) => {
+    const track = db.prepare('SELECT * FROM tracks WHERE id = ? AND artist_id = ?')
+                    .get(req.params.id, req.session.artistId);
+
+    if (!track) return res.status(404).send('Track nicht gefunden.');
+
+    // Nutzt den zentralen Basispfad aus der .env (z.B. /var/lib/.../media)
+    const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+    
+    // REPARIERT: Da track.filepath in der DB nun z.B. 'new/abc.wav' oder 'mapped-to-playlist/abc.wav' 
+    // speichert, baut path.join daraus automatisch den perfekten absoluten Pfad!
+    const absoluteFilePath = path.join(baseMediaDir, track.filepath);
+
+    if (!fs.existsSync(absoluteFilePath)) {
+        console.error(`[Streaming-Fehler] Datei nicht gefunden unter: ${absoluteFilePath}`);
+        return res.status(404).send('Audiodatei auf dem Server nicht gefunden.');
+    }
+
+    res.sendFile(absoluteFilePath);
+});
+
+
 // --- Gemeinsame Validierung der Track-Zusatzfelder ---
 
 function validateTrackFields(req, body) {
     const errors = [];
     if (!body.title || !body.title.trim()) errors.push(req.t('messages.trackTitleRequired'));
-    if (!body.genre || !body.genre.trim()) errors.push(req.t('messages.trackGenreRequired'));
-    if (!body.track_page_url || !body.track_page_url.trim()) errors.push(req.t('messages.trackPageUrlRequired'));
+    // if (!body.genre || !body.genre.trim()) errors.push(req.t('messages.trackGenreRequired'));
+    // if (!body.track_page_url || !body.track_page_url.trim()) errors.push(req.t('messages.trackPageUrlRequired'));
     if (body.bpm && (isNaN(parseInt(body.bpm, 10)) || parseInt(body.bpm, 10) <= 0)) {
         errors.push(req.t('messages.bpmPositive'));
     }
@@ -436,7 +453,8 @@ router.post('/tracks/analyze-bpm', requireArtist, (req, res) => {
 // --- Neuer Upload ---
 
 router.post('/tracks/upload', requireArtist, (req, res) => {
-    upload.fields([{ name: 'track', maxCount: 1 }, { name: 'image', maxCount: 1 }])(req, res, (err) => {
+    upload.fields([{ name: 'track', maxCount: 1 }, { name: 'image', maxCount: 1 }])(req, res, async (err) => {
+    
         if (err) {
             return res.redirect(`/dashboard?err=${encodeURIComponent(err.message)}`);
         }
@@ -473,7 +491,7 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
 
         const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(req.session.artistId);
         const fileSizeMb = trackFile.size / (1024 * 1024);
-
+        /*
         const usedMb = db
             .prepare('SELECT COALESCE(SUM(filesize_mb), 0) AS used FROM tracks WHERE artist_id = ?')
             .get(artist.id).used;
@@ -485,25 +503,63 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
                 `/dashboard?err=${encodeURIComponent(req.t('messages.quotaExceededUpload', { remaining }))}`
             );
         }
+        */
+        
+        // ====================================================================
+        // --- NEU: STATIONS-SPEZIFISCHE AUDIO-LÄNGEN-VALIDIERUNG (10 MIN) ---
+        // ====================================================================
+        let durationSeconds = 0;
 
+        try {
+            // REPARIERT: Nutzt jetzt den unzerstörbaren Modulnamen
+            const metadata = await audioMetadataParser.parseFile(trackFile.path);
+            durationSeconds = metadata.format.duration || 0;
+            console.log(`[Upload-Check] Neuer Track hat eine Länge von: ${durationSeconds.toFixed(1)} Sekunden.`);
+        } catch (metaErr) {
+            console.error("Fehler beim Auslesen der Audio-Laenge:", metaErr.message);
+            cleanup();
+            return res.redirect(`/dashboard?err=${encodeURIComponent('Ungueltige oder beschaedigte Audiodatei.')}`);
+        }
+
+        // Berechne die Summe der Sekunden aller bereits existierenden Tracks dieses Artists
+        const usedSeconds = db
+            .prepare('SELECT COALESCE(SUM(duration_seconds), 0) AS used FROM tracks WHERE artist_id = ?')
+            .get(artist.id).used;
+
+        const maxAllowedSeconds = (artist.quota_minutes || 60) * 60; // Minuten in Sekunden umrechnen
+
+        // Prüfen, ob das Gesamtlimit durch diesen Upload überschritten wird
+        if (usedSeconds + durationSeconds > maxAllowedSeconds) {
+            cleanup();
+            const remainingMinutes = Math.max(0, (maxAllowedSeconds - usedSeconds) / 60).toFixed(1);
+            return res.redirect(
+                `/dashboard?err=${encodeURIComponent(`Kontingent ueberschritten! Dir verbleiben noch ${remainingMinutes} Minuten Gesamtsendezeit.`)}`
+            );
+        }
+        // ====================================================================
+        // --- ENDE DER NEUEN PRÜFUNG (Es folgt dein INSERT INTO tracks) ---
+        // ====================================================================
+        
         db.prepare(`
             INSERT INTO tracks (
-                artist_id, title, genre, bio_lyrics, bpm, track_page_url, video_url,
-                image_filename, filename, filepath, filesize_mb, status
+                artist_id, station_id, title, genre, bio_lyrics, bpm, track_page_url, video_url,
+                image_filename, filename, filepath, filesize_mb, duration_seconds, status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'eingereicht')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'eingereicht')
         `).run(
             artist.id,
+            req.currentStation.id, // 2. Parameter für die Mandantentrennung
             req.body.title.trim(),
-            req.body.genre.trim(),
+            (req.body.genre || '').trim(),
             (req.body.bio_lyrics || '').trim(),
             req.body.bpm ? parseInt(req.body.bpm, 10) : null,
-            req.body.track_page_url.trim(),
+            (req.body.track_page_url || '').trim(),
             (req.body.video_url || '').trim(),
             imageFile.filename,
-            trackFile.originalname,
             trackFile.filename,
-            fileSizeMb
+            `new/${trackFile.filename}`,
+            fileSizeMb,
+            durationSeconds // 13. Parameter für das zeitbasierte Kontingent
         );
 
         res.redirect(`/dashboard?msg=${encodeURIComponent(req.t('messages.trackUploaded'))}`);
@@ -561,27 +617,44 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
         let newFilename = track.filename;
         let newFilepath = track.filepath;
         let newFilesizeMb = track.filesize_mb;
-
+        let durationSeconds = track.duration_seconds || 0; 
+        
         if (trackFile) {
-            const newFileSizeMb = trackFile.size / (1024 * 1024);
-            const usedMbWithoutThis = db
-                .prepare('SELECT COALESCE(SUM(filesize_mb), 0) AS used FROM tracks WHERE artist_id = ? AND id != ?')
+            let newDurationSeconds = 0;
+            try {
+                const metadata = await audioMetadataParser.parseFile(trackFile.path);
+                newDurationSeconds = metadata.format.duration || 0;
+            } catch (e) {
+                cleanupNew();
+                return res.redirect(`/dashboard?err=${encodeURIComponent('Ungueltige Audiodatei beim Ersetzen.')}`);
+            }
+
+            // Summe aller ANDEREN Tracks berechnen (ohne den aktuell bearbeiteten Track)
+            const usedSecondsWithoutThis = db
+                .prepare('SELECT COALESCE(SUM(duration_seconds), 0) AS used FROM tracks WHERE artist_id = ? AND id != ?')
                 .get(artist.id, track.id).used;
 
-            if (usedMbWithoutThis + newFileSizeMb > artist.quota_mb) {
+            const maxAllowedSeconds = (artist.quota_minutes || 60) * 60;
+
+            if (usedSecondsWithoutThis + newDurationSeconds > maxAllowedSeconds) {
                 cleanupNew();
-                const remaining = (artist.quota_mb - usedMbWithoutThis).toFixed(1);
+                const remainingMinutes = Math.max(0, (maxAllowedSeconds - usedSecondsWithoutThis) / 60).toFixed(1);
                 return res.redirect(
-                    `/dashboard?err=${encodeURIComponent(req.t('messages.quotaExceededExchange', { remaining }))}`
+                    `/dashboard?err=${encodeURIComponent(`Ersetzen fehlgeschlagen! Restzeit: ${remainingMinutes} Min.`)}`
                 );
             }
 
-            const oldLocalPath = path.join(__dirname, '..', 'uploads', track.filepath);
+            // Wenn alles okay ist, alte Datei löschen und neue Werte setzen
+            const oldTrackSubFolder = track.status === 'freigegeben' ? `artists/${artist.id}` : 'new';
+            const oldLocalPath = path.join(baseMediaDir, oldTrackSubFolder, track.filename);
             if (fs.existsSync(oldLocalPath)) fs.unlinkSync(oldLocalPath);
 
             newFilename = trackFile.originalname;
-            newFilepath = trackFile.filename;
-            newFilesizeMb = newFileSizeMb;
+            newFilepath = `new/${trackFile.filename}`;
+            newFilesizeMb = trackFile.size / (1024 * 1024);
+            
+            // KORREKTUR: Nutzt jetzt die oben sauber deklarierte CamelCase-Variable!
+            durationSeconds = newDurationSeconds;  
         }
 
         let newImageFilename = track.image_filename;
@@ -598,20 +671,21 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
         db.prepare(`
             UPDATE tracks
             SET title = ?, genre = ?, bio_lyrics = ?, bpm = ?, track_page_url = ?, video_url = ?,
-                image_filename = ?, filename = ?, filepath = ?, filesize_mb = ?,
+                image_filename = ?, filename = ?, filepath = ?, filesize_mb = ?, duration_seconds = ?,
                 status = 'eingereicht', updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `).run(
-            req.body.title.trim(),
-            req.body.genre.trim(),
+            req.body.title.trim(), 
+            (req.body.genre || '').trim(),
             (req.body.bio_lyrics || '').trim(),
             req.body.bpm ? parseInt(req.body.bpm, 10) : null,
-            req.body.track_page_url.trim(),
+            (req.body.track_page_url || '').trim(),
             (req.body.video_url || '').trim(),
             newImageFilename,
             newFilename,
             newFilepath,
             newFilesizeMb,
+            durationSeconds,
             track.id
         );
 
@@ -623,7 +697,9 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                 // Audiodatei wurde ersetzt -> alte AzuraCast-Datei ersetzen und dabei
                 // dieselben Playlists erneut zuordnen (aus der Admin-Freigabe gemerkt).
                 if (trackFile) {
-                    const localPath = path.join(__dirname, '..', 'uploads', newFilepath);
+                    // const localPath = path.join(__dirname, '..', 'uploads', newFilepath);
+                    const localPath = path.join(baseMediaDir, 'incoming', newFilepath);
+ 
                     const targetFilename = `artists/${artist.id}/${newFilepath}`;
                     const playlistIds = (track.playlist_ids || '')
                         .split(',')
@@ -635,11 +711,11 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
 
                 await azuracast.setMetadata(mediaId, {
                     title: req.body.title.trim(),
-                    artist: artist.name,
-                    genre: req.body.genre.trim(),
+                    artist: artist.name, 
+                    genre: (req.body.genre || '').trim(),
                     lyrics: (req.body.bio_lyrics || '').trim(),
                     bpm: req.body.bpm ? parseInt(req.body.bpm, 10) : null,
-                    url_track: req.body.track_page_url.trim(),
+                    url_track: (req.body.url_track || '').trim(),
                     url_artist: artist.artist_page_url,
                     links: getArtistLinksMap(artist.id),
                 });
@@ -676,7 +752,11 @@ router.post('/tracks/:id/delete', requireArtist, (req, res) => {
         return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.trackNotFound'))}`);
     }
 
-    const localPath = path.join(__dirname, '..', 'uploads', track.filepath);
+    // const localPath = path.join(__dirname, '..', 'uploads', track.filepath);
+    const trackSubFolder = track.status === 'freigegeben' ? `artists/${track.artist_id}` : 'incoming';
+    const localPath = path.join(baseMediaDir, trackSubFolder, track.filename);
+
+        
     if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
 
     if (track.image_filename) {

@@ -42,6 +42,15 @@
                         <% if (track.track_page_url) { %><a href="<%= track.track_page_url %>" target="_blank" rel="noopener noreferrer">Track Page</a><% } %>
                         <% if (track.video_url) { %> · <a href="<%= track.video_url %>" target="_blank" rel="noopener noreferrer">Video</a><% } %>
                     </p>
+                    
+                  <!-- In der Track-Liste des Admins einfügen -->
+                  <div style="margin-top: 8px;">
+                    <audio controls preload="none" style="width: 100%; max-width: 400px; margin-top: 8px;">
+                        <source src="/admin/tracks/<%= track.id %>/stream/<%= encodeURIComponent(track.filename) %>" type="audio/mpeg">
+                    </audio>
+                  </div>  
+                    
+                    
                 </div>
             </div>
 
@@ -62,7 +71,9 @@
     <% }); %>
 
     <hr class="divider">
-
+                
+      
+               
     <!-- Neuen Artist anlegen -->
     <h2>Neuen Artist anlegen</h2>
     <div class="panel">
@@ -115,6 +126,11 @@
                             <form method="POST" action="/admin/artists/<%= a.id %>/toggle-active">
                                 <button type="submit" class="btn-quiet btn-small">
                                     <%= a.active ? 'Sperren' : 'Entsperren' %>
+                                </button>
+                            </form>
+                            <form method="POST" action="/admin/artists/<%= a.id %>/delete" style="display:inline;" onsubmit="return confirm('Möchtest du den Künstler «<%= a.name %>» wirklich UNWIDERRUFLICH mitsamt allen Tracks und Dateien löschen?');">
+                                <button type="submit" class="btn-quiet btn-small" style="border-color:#ff3333 !important;">
+                                    Künstler löschen
                                 </button>
                             </form>
                         </td>
