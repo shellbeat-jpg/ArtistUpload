@@ -430,27 +430,37 @@ router.post('/admin/tracks/:id/remove-from-azuracast', requireAdmin, async (req,
 });
 
 // GET: Audio-Stream im Admin-Bereich (Korrigiert für das /new- & Playlist-System)
-router.get('/admin/tracks/:id/stream/:filename', requireAdmin, (req, res) => {
+// GET: Audio-Stream im Admin-Bereich (Ohne Session-Sperre für den HTML5-Player)
+router.get('/admin/tracks/:id/stream/:filename', (req, res) => {
     const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
     if (!track) return res.status(404).send('Track nicht gefunden.');
 
-    //const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
-    const stationDb = db.prepare('SELECT azuracast_station_id, url_stub FROM stations WHERE id = ?').get(track.station_id);
+    const stationDb = db.prepare('SELECT azuracast_station_id FROM stations WHERE id = ?').get(track.station_id);
     const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
-    const stationStub = stationDb ? stationDb.url_stub : 'default';
     const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
     
-    // REPARIERT: Nutzt die exakte, playlistbasierte Pfadreferenz aus der Datenbank
-    const absoluteFilePath = path.join(baseMediaDir, track.filepath);
+    const possibleFolders = ['mapped-to-playlist', 'incoming', 'archive', 'new'];
+    let absoluteFilePath = null;
+
+    for (const folder of possibleFolders) {
+        const testPath = path.join(baseMediaDir, folder, req.params.filename);
+        if (fs.existsSync(testPath)) {
+            absoluteFilePath = testPath;
+            break; 
+        }
+    }
+
+    if (!absoluteFilePath) {
+        absoluteFilePath = path.join(baseMediaDir, track.filepath);
+    }
 
     if (!fs.existsSync(absoluteFilePath)) {
-        console.error(`[Admin-Streaming-Fehler] Datei nicht gefunden unter: ${absoluteFilePath}`);
+        console.error(`[Admin-Streaming-Fehler] Datei unauffindbar unter: ${absoluteFilePath}`);
         return res.status(404).send('Datei nicht gefunden.');
     }
 
     res.sendFile(absoluteFilePath);
 });
-
  
 // POST: Künstler restlos löschen (Volle Entkopplung gegen 504 Time-outs)
 router.post('/admin/artists/:id/delete', requireAdmin, async (req, res) => {

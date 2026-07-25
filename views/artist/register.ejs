@@ -29,7 +29,7 @@
     <!-- Profil-Informationen -->
     <h2><%= t('dashboard.profileHeading') %></h2>
     <div class="panel">
-        <form method="POST" action="/register">
+        <form method="POST" action="/artist/register">
             
             <label for="artist_name"><%= t('dashboard.artistName') %> *</label>
             <input type="text" id="artist_name" name="artist_name" value="<%= safeData.artist_name || '' %>" required autocomplete="username">
@@ -86,7 +86,7 @@
             <!-- Buttons passend zur CSS-Nomenklatur -->
             <div style="display: flex; gap: 12px; align-items: center; margin-top: 16px;">
                 <button type="submit"><%= t('register.submit') %></button>
-                <a href="/login" class="btn-quiet btn-small" style="text-decoration: none; display: inline-block;"><%= t('register.back_to_login') %></a>
+                <a href="/artist/login" class="btn-quiet btn-small" style="text-decoration: none; display: inline-block;"><%= t('register.back_to_login') %></a>
             </div>
         </form>
     </div>

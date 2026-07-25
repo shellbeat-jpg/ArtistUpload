@@ -100,14 +100,20 @@ app.use((req, res, next) => {
 });
 // ====================================================================
 
-app.get('/', (req, res) => res.redirect('/login'));
 
-app.use('/', artistRoutes);
+
+//app.use('/', artistRoutes);
+//app.use('/', adminRoutes);
+
+app.use('/artist', artistRoutes); 
 app.use('/', adminRoutes);
 
+app.get('/', (req, res) => res.redirect('/artist/login'));
+
 app.use((req, res) => {
+    console.log(`[404-Block] Nicht abgefangene URL blockiert: ${req.method} ${req.path}`);
     res.status(404).send('Seite nicht gefunden.');
-});
+});   
 
 const port = process.env.PORT || 3500;
 app.listen(port, '127.0.0.1', () => {

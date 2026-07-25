@@ -93,7 +93,7 @@
     <!-- Profil -->
     <h2><%= t('dashboard.profileHeading') %></h2>
     <div class="panel">
-        <form method="POST" action="/profile">
+        <form method="POST" action="/artist/profile">
             <label for="name"><%= t('dashboard.artistName') %></label>
             <input type="text" id="name" name="name" value="<%= artist.name %>" required>
                  <!--       -->
@@ -140,7 +140,7 @@
     <!-- Neuer Upload -->
     <h2><%= t('dashboard.uploadHeading') %></h2>
     <div class="panel">
-        <form method="POST" action="/tracks/upload" enctype="multipart/form-data">
+        <form method="POST" action="/artist/tracks/upload" enctype="multipart/form-data">
             <label for="title"><%= t('dashboard.trackName') %></label>
             <input type="text" id="title" name="title" required>
 
@@ -211,7 +211,7 @@
             
             <details style="margin-top: 12px;">
                 <summary style="cursor:pointer; font-size:12px; color: var(--text-dim);"><%= t('dashboard.editExpand') %></summary>
-                <form method="POST" action="/tracks/<%= track.id %>/replace" enctype="multipart/form-data" style="margin-top:12px;">
+                <form method="POST" action="/artist/tracks/<%= track.id %>/replace" enctype="multipart/form-data" style="margin-top:12px;">
                     <label><%= t('dashboard.trackName') %></label>
                     <input type="text" name="title" value="<%= track.title %>" required>
 
@@ -243,14 +243,14 @@
                 <script>wireBpmDetection('replace-track-<%= track.id %>', 'replace-bpm-<%= track.id %>', 'replace-submit-<%= track.id %>');</script>
             </details>
 
-            <form method="POST" action="/tracks/<%= track.id %>/delete"
+            <form method="POST" action="/artist/tracks/<%= track.id %>/delete"
                   onsubmit="return confirm('<%= t('dashboard.deleteConfirm') %>');" style="margin-top:8px;">
                 <button type="submit" class="btn-danger btn-small"><%= t('dashboard.delete') %></button>
             </form>
         </div>
     <% }); %>
 
-    <form method="POST" action="/logout" style="margin-top: 32px;">
+    <form method="POST" action="/artist/logout" style="margin-top: 32px;">
         <button type="submit" class="btn-quiet btn-small"><%= t('dashboard.logout') %></button>
     </form>
 </div>

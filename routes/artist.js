@@ -38,7 +38,7 @@ const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docke
 // Middleware: Weiterleitung falls bereits eine aktive Session existiert
 function redirectIfLoggedIn(req, res, next) {
     if (req.session && req.session.artistId) {
-        return res.redirect('/dashboard');
+        return res.redirect('/artist/dashboard');
     }
     next();
 }
@@ -85,11 +85,11 @@ router.post('/login', (req, res) => {
     }
 
     req.session.artistId = artist.id;
-    res.redirect('/dashboard');
+    res.redirect('/artist/dashboard');
 });
 
 router.post('/logout', (req, res) => {
-    req.session.destroy(() => res.redirect('/login'));
+    req.session.destroy(() => res.redirect('/artist/login'));
 });
 
 
@@ -319,26 +319,26 @@ router.post('/profile', requireArtist, async (req, res) => {
     const { name, artist_page_url, email, contact_phone, bio } = req.body;
 
     if (!name || !name.trim()) {
-        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileNameRequired'))}`);
+        return res.redirect(`/artist/dashboard?err=${encodeURIComponent(req.t('messages.profileNameRequired'))}`);
     }
     if (!artist_page_url || !artist_page_url.trim()) {
-        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileUrlRequired'))}`);
+        return res.redirect(`/artist/dashboard?err=${encodeURIComponent(req.t('messages.profileUrlRequired'))}`);
     }
     if (!contact_phone && !email) {
-        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.profileContactRequired'))}`);
+        return res.redirect(`/artist/dashboard?err=${encodeURIComponent(req.t('messages.profileContactRequired'))}`);
     }
     
     // WICHTIG: Prüfen, ob die neue E-Mail bereits von einem ANDEREN Artist genutzt wird
     const emailConflict = db.prepare('SELECT id FROM artists WHERE email = ? AND id != ?').get(email.trim(), req.session.artistId);
     if (emailConflict) {
-        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('register.errorEmailExists'))}`);
+        return res.redirect(`/artist/dashboard?err=${encodeURIComponent(req.t('register.errorEmailExists'))}`);
     }
     
     let links;
     try {
         links = parseArtistLinksFromBody(req, req.body);
     } catch (e) {
-        return res.redirect(`/dashboard?err=${encodeURIComponent(e.message)}`);
+        return res.redirect(`/artist/dashboard?err=${encodeURIComponent(e.message)}`);
     }
 
     db.prepare(`
@@ -388,11 +388,79 @@ router.post('/profile', requireArtist, async (req, res) => {
     const msg = syncFailed
         ? req.t('messages.profileUpdatedSyncFailed')
         : req.t('messages.profileUpdated');
-    res.redirect(`/dashboard?msg=${encodeURIComponent(msg)}`);
+    res.redirect(`/artist/dashboard?msg=${encodeURIComponent(msg)}`);
 });
 
- 
+/*
 // GET: Audio-Stream im Artist-Bereich (Korrigiert für das /new- & Playlist-System)
+//router.get('/tracks/:id/stream/:filename', requireArtist, (req, res) => {
+router.get('/tracks/:id/stream/:filename', (req, res) => {
+    // Holt den Track anhand ID und Künstler-Sitzung
+    //const track = db.prepare('SELECT * FROM tracks WHERE id = ? AND artist_id = ?')
+    //                .get(req.params.id, req.session.artistId);
+    const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
+
+    if (!track) return res.status(404).send('Track nicht gefunden.');
+
+    // 1. DYNAMISCHE SENDER-ISOLATION
+    const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docker/volumes/azuracast_station_data/_data';
+    
+    // Ermittelt den physikalischen Ordner direkt über die Track-Zuweisung aus der DB
+    const stationDb = db.prepare('SELECT azuracast_station_id FROM stations WHERE id = ?').get(track.station_id);
+    const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
+    
+    const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
+    
+    // 2. ABSOLUTER DATEIPFAD-CHECK
+    // Da track.filepath flexibel "new/hash.wav" oder "incoming/hash.wav" enthält,
+    // findet diese Zeile die Datei in jeder Lebensphase des Tracks!
+    const absoluteFilePath = path.join(baseMediaDir, track.filepath);
+
+    console.log(`[Stream-Debug] Sende Datei: ${absoluteFilePath}`);
+
+    if (!fs.existsSync(absoluteFilePath)) {
+        console.error(`[Stream-Fehler] Datei physikalisch nicht gefunden: ${absoluteFilePath}`);
+        return res.status(404).send('Audiodatei auf dem Server nicht gefunden.');
+    }
+
+    res.sendFile(absoluteFilePath);
+});
+*/
+router.get('/tracks/:id/stream/:filename', (req, res) => { 
+    const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
+
+    if (!track) return res.status(404).send('Track nicht gefunden.');
+
+    const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docker/volumes/azuracast_station_data/_data';
+    const stationDb = db.prepare('SELECT azuracast_station_id FROM stations WHERE id = ?').get(track.station_id);
+    const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
+    const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
+
+    const possibleFolders = ['mapped-to-playlist', 'incoming', 'new'];
+    let absoluteFilePath = null;
+
+    for (const folder of possibleFolders) {
+        const testPath = path.join(baseMediaDir, folder, req.params.filename);
+        if (fs.existsSync(testPath)) {
+            absoluteFilePath = testPath;
+            break;
+        }
+    }
+
+    if (!absoluteFilePath) {
+        absoluteFilePath = path.join(baseMediaDir, track.filepath);
+    }
+
+    if (!fs.existsSync(absoluteFilePath)) {
+        console.error(`[Stream-Fehler] Datei auf Festplatte unauffindbar: ${absoluteFilePath}`);
+        return res.status(404).send('Audiodatei auf dem Server nicht gefunden.');
+    }
+
+    res.sendFile(absoluteFilePath);
+});
+ 
+
+/*
 router.get('/tracks/:id/stream/:filename', requireArtist, (req, res) => {
     const track = db.prepare('SELECT * FROM tracks WHERE id = ? AND artist_id = ?')
                     .get(req.params.id, req.session.artistId);
@@ -416,7 +484,7 @@ router.get('/tracks/:id/stream/:filename', requireArtist, (req, res) => {
 
     res.sendFile(absoluteFilePath);
 });
-
+*/
 
 // --- Gemeinsame Validierung der Track-Zusatzfelder ---
 
@@ -468,7 +536,7 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
     upload.fields([{ name: 'track', maxCount: 1 }, { name: 'image', maxCount: 1 }])(req, res, async (err) => {
     
         if (err) {
-            return res.redirect(`/dashboard?err=${encodeURIComponent(err.message)}`);
+            return res.redirect(`/artist/dashboard?err=${encodeURIComponent(err.message)}`);
         }
 
         const trackFile = req.files?.track?.[0];
@@ -481,24 +549,24 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
 
         if (!trackFile) {
             cleanup();
-            return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.noAudioFile'))}`);
+            return res.redirect(`/artist/dashboard?err=${encodeURIComponent(req.t('messages.noAudioFile'))}`);
         }
         if (!imageFile) {
             cleanup();
-            return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.imageRequired'))}`);
+            return res.redirect(`/artist/dashboard?err=${encodeURIComponent(req.t('messages.imageRequired'))}`);
         }
 
         const fieldErrors = validateTrackFields(req, req.body);
         if (fieldErrors.length > 0) {
             cleanup();
-            return res.redirect(`/dashboard?err=${encodeURIComponent(fieldErrors.join(' '))}`);
+            return res.redirect(`/artist/dashboard?err=${encodeURIComponent(fieldErrors.join(' '))}`);
         }
 
         try {
             validateImageSize(req, imageFile);
         } catch (e) {
             cleanup();
-            return res.redirect(`/dashboard?err=${encodeURIComponent(e.message)}`);
+            return res.redirect(`/artist/dashboard?err=${encodeURIComponent(e.message)}`);
         }
 
         const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(req.session.artistId);
@@ -530,7 +598,7 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
         } catch (metaErr) {
             console.error("Fehler beim Auslesen der Audio-Laenge:", metaErr.message);
             cleanup();
-            return res.redirect(`/dashboard?err=${encodeURIComponent('Ungueltige oder beschaedigte Audiodatei.')}`);
+            return res.redirect(`/artist/dashboard?err=${encodeURIComponent('Ungueltige oder beschaedigte Audiodatei.')}`);
         }
 
         // Berechne die Summe der Sekunden aller bereits existierenden Tracks dieses Artists
@@ -545,7 +613,7 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
             cleanup();
             const remainingMinutes = Math.max(0, (maxAllowedSeconds - usedSeconds) / 60).toFixed(1);
             return res.redirect(
-                `/dashboard?err=${encodeURIComponent(`Kontingent ueberschritten! Dir verbleiben noch ${remainingMinutes} Minuten Gesamtsendezeit.`)}`
+                `/artist/dashboard?err=${encodeURIComponent(`Kontingent ueberschritten! Dir verbleiben noch ${remainingMinutes} Minuten Gesamtsendezeit.`)}`
             );
         }
         
@@ -623,7 +691,7 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
         });
 
 
-        res.redirect(`/dashboard?msg=${encodeURIComponent(req.t('messages.trackUploaded'))}`);
+        res.redirect(`/artist/dashboard?msg=${encodeURIComponent(req.t('messages.trackUploaded'))}`);
     });
 });
 
@@ -641,7 +709,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
 
     upload.fields([{ name: 'track', maxCount: 1 }, { name: 'image', maxCount: 1 }])(req, res, async (err) => {
         if (err) {
-            return res.redirect(`/dashboard?err=${encodeURIComponent(err.message)}`);
+            return res.redirect(`/artist/dashboard?err=${encodeURIComponent(err.message)}`);
         }
 
         const track = db
@@ -658,13 +726,13 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
 
         if (!track) {
             cleanupNew();
-            return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.trackNotFound'))}`);
+            return res.redirect(`/artist/dashboard?err=${encodeURIComponent(req.t('messages.trackNotFound'))}`);
         }
 
         const fieldErrors = validateTrackFields(req, req.body);
         if (fieldErrors.length > 0) {
             cleanupNew();
-            return res.redirect(`/dashboard?err=${encodeURIComponent(fieldErrors.join(' '))}`);
+            return res.redirect(`/artist/dashboard?err=${encodeURIComponent(fieldErrors.join(' '))}`);
         }
 
         if (imageFile) {
@@ -672,7 +740,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                 validateImageSize(req, imageFile);
             } catch (e) {
                 cleanupNew();
-                return res.redirect(`/dashboard?err=${encodeURIComponent(e.message)}`);
+                return res.redirect(`/artist/dashboard?err=${encodeURIComponent(e.message)}`);
             }
         }
 
@@ -690,7 +758,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                 newDurationSeconds = metadata.format.duration || 0;
             } catch (e) {
                 cleanupNew();
-                return res.redirect(`/dashboard?err=${encodeURIComponent('Ungueltige Audiodatei beim Ersetzen.')}`);
+                return res.redirect(`/artist/dashboard?err=${encodeURIComponent('Ungueltige Audiodatei beim Ersetzen.')}`);
             }
 
             // Summe aller ANDEREN Tracks berechnen (ohne den aktuell bearbeiteten Track)
@@ -704,7 +772,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                 cleanupNew();
                 const remainingMinutes = Math.max(0, (maxAllowedSeconds - usedSecondsWithoutThis) / 60).toFixed(1);
                 return res.redirect(
-                    `/dashboard?err=${encodeURIComponent(`Ersetzen fehlgeschlagen! Restzeit: ${remainingMinutes} Min.`)}`
+                    `/artist/dashboard?err=${encodeURIComponent(`Ersetzen fehlgeschlagen! Restzeit: ${remainingMinutes} Min.`)}`
                 );
             }
 
@@ -822,7 +890,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
         const msg = wasSynced
             ? `${req.t('messages.trackUpdatedSynced')}${syncNote}`
             : req.t('messages.trackUpdated');
-        res.redirect(`/dashboard?msg=${encodeURIComponent(msg)}`);
+        res.redirect(`/artist/dashboard?msg=${encodeURIComponent(msg)}`);
     });
 });
 
@@ -834,7 +902,7 @@ router.post('/tracks/:id/delete', requireArtist, (req, res) => {
         .get(req.params.id, req.session.artistId);
 
     if (!track) {
-        return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.trackNotFound'))}`);
+        return res.redirect(`/artist/dashboard?err=${encodeURIComponent(req.t('messages.trackNotFound'))}`);
     }
     const baseMediaDir = req.currentStation 
         ? path.join(globalDockerDir, req.currentStation.azuracast_station_id, 'media')
@@ -856,7 +924,7 @@ router.post('/tracks/:id/delete', requireArtist, (req, res) => {
     // dort bewusst bestehen, bis ein Admin ihn aktiv entfernt (routes/admin.js).
     db.prepare('DELETE FROM tracks WHERE id = ?').run(track.id);
 
-    res.redirect(`/dashboard?msg=${encodeURIComponent(req.t('messages.trackDeleted'))}`);
+    res.redirect(`/artist/dashboard?msg=${encodeURIComponent(req.t('messages.trackDeleted'))}`);
 });
 
 module.exports = router;
