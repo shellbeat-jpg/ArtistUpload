@@ -16,5 +16,8 @@ routes/-admin.js
 routes/-artist.js
 views/artist/-dashboard.ejs
 views/artist/-login.ejs
+lib/---azuracast.js
+lib/__azuracast.js
+routes/--admin.js
 
 

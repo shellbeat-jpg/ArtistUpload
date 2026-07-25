@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><%= t('register.title') %> — <%= t('common.stationName') %></title>
+    <title><%= currentStation.title_branding || 'Artist Portal' %></title>
     <link rel="stylesheet" href="/style.css">
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
@@ -18,7 +18,7 @@
         <a href="?lng=de">DE</a> · <a href="?lng=en">EN</a>
     </div>
     
-    <div class="eyebrow"><%= t('common.stationName') %></div>
+    <div class="eyebrow"><%= currentStation.title_branding || 'Artist Portal' %></div>
     <h1><%= t('login.register_button') %></h1>
     <p class="subtitle"><%= t('register.title') %></p>
 

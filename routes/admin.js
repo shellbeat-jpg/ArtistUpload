@@ -1,3 +1,4 @@
+//  (AzuraCast API offline)
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const path = require('path');
@@ -6,6 +7,8 @@ const db = require('../db/connection');
 const { requireAdmin } = require('../lib/auth');
 const azuracast = require('../lib/azuracast');
 const { getArtistLinksMap } = require('../lib/artist-links');
+
+const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docker/volumes/azuracast_station_data/_data'; 
 
 const router = express.Router();
 
@@ -25,21 +28,60 @@ router.all('/admin/logout', (req, res) => {
     }
 });
 
-
 router.get('/admin/login', (req, res) => {
-    res.render('admin/login', { error: null });
+    return res.render('admin/login', {
+        error: req.query.err || null,
+        formData: {},
+        currentStation: null 
+    });
 });
-
-router.post('/admin/login', (req, res) => {
+router.post('/admin/login', async (req, res) => {
     const { email, password } = req.body;
-    const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(email);
 
-    if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
-        return res.render('admin/login', { error: 'E-Mail oder Passwort ist falsch.' });
+    try {
+        let admin;
+
+        // Sicherheitsnetz: Prüfen, ob wir uns auf einer Subdomain befinden oder auf der Hauptdomain
+        if (req.currentStation && req.currentStation.id) {
+            // Szenario A: Login auf einer Sender-Subdomain -> Strikte Zuordnung prüfen
+            admin = db.prepare('SELECT * FROM admins WHERE email = ? AND station_id = ?')
+                      .get(email, req.currentStation.id);
+        } else {
+            // Szenario B: Login auf der Hauptdomain -> Admin global anhand der E-Mail finden
+            admin = db.prepare('SELECT * FROM admins WHERE email = ?')
+                      .get(email);
+        }
+
+        if (!admin) {
+            return res.render('admin/login', { 
+                error: 'Ungültige Zugangsdaten für dieses Portal.', 
+                formData: req.body,
+                currentStation: null 
+            });
+        }
+
+        // Passwort-Vergleich mit Bcrypt
+        const match = await bcrypt.compare(password, admin.password_hash);
+        if (!match) {
+            return res.render('admin/login', { 
+                error: 'Ungültige Zugangsdaten für dieses Portal.', 
+                formData: req.body,
+                currentStation: null 
+            });
+        }
+
+        // --- SESSION-ZUWEISUNG FÜR DEN ABGESCHOTTETEN ZUGRIFF ---
+        req.session.isAdmin = true;
+        req.session.adminId = admin.id;
+        req.session.adminStationId = admin.station_id; // Nimmt die zugewiesene ID (z.B. 1 für Basspistol, 2 für Bass)
+
+        // Erfolgreicher Login -> Weiterleitung zur Übersicht
+        return res.redirect('/admin');
+
+    } catch (err) {
+        console.error("Schwerer Fehler beim Admin-Login:", err.message);
+        return res.render('admin/login', { error: 'Interner Serverfehler beim Login: ' + err.message });
     }
-
-    req.session.adminId = admin.id;
-    res.redirect('/admin');
 });
 
 //router.post('/admin/logout', (req, res) => {
@@ -49,77 +91,121 @@ router.post('/admin/login', (req, res) => {
 // --- Uebersicht ---
 
 // router.get('/admin', requireAdmin, (req, res) => {
+ 
+    
 router.get('/admin', requireAdmin, async (req, res) => {
-const tracks = db.prepare('SELECT * FROM tracks').all();
-    const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+    console.log("==================================================");
+    console.log(`[Admin-Check] Eingeloggter Admin-ID: ${req.session.adminId}`);
+    console.log(`[Admin-Check] Erhaltene Admin-Station-ID aus Session: ${req.session.adminStationId}`);
+    console.log("==================================================");
+    console.log(`[Session] Aktuelle Session-ID (Cookie-Inhalt): ${req.sessionID}`);
+    console.log(`[Session] adminId: ${req.session.adminId}`);
+    //console.log(`[Session] adminStationId (Rohwert):`, rawSessionStationId);
+    //console.log(`[Session] adminStationId (Konvertiert): ${adminStationId}`);
+    
+    // Sicherheitsnetz: Falls die Session aus irgendeinem Grund leer ist, 
+    // erzwingen wir ein Fallback, anstatt alle Daten für alle Admins freizugeben!
+    const adminStationId = req.session.adminStationId ? parseInt(req.session.adminStationId, 10) : 1;
 
-    // --- AUTOMATISCHE AZURACAST-ORDNER-SORTIERUNG ---
-// --- AUTOMATISCHE BACKGROUND-SORTIERUNG IN GET /admin ---
-    for (const track of tracks) {
-        if (track.status === 'freigegeben' && track.azuracast_media_id) {
-            try {
-                const station = db.prepare('SELECT url_stub FROM stations WHERE id = ?').get(track.station_id);
-                const stationStub = station ? station.url_stub : 'default';
+    try {
+        // 1. Alle Tracks für die Sortierschleife laden
+        const tracks = db.prepare('SELECT * FROM tracks').all();
+        
+        // Globale Docker-Basis aus der .env holen
+        // const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
 
-                const response = await fetch(`${process.env.AZURACAST_BASE_URL}/api/station/${stationStub}/media/${track.azuracast_media_id}`, {
-                    headers: { 'Authorization': `Bearer ${process.env.AZURACAST_API_KEY}` }
-                });
-                
-                if (response.ok) {
-                    const azuraTrack = await response.json();
-                    const hasPlaylists = azuraTrack.playlists && azuraTrack.playlists.length > 0;
+        // --- AUTOMATISCHE BACKGROUND-SORTIERUNG IN GET /admin ---
+        for (const track of tracks) {
+            if (track.status === 'freigegeben' && track.azuracast_media_id) {
+                try {
+                    // KORREKTUR: Die Stations- und Pfadermittlung steht nun IN DER SCHLEIFE
+                    // Dadurch ist 'track.station_id' hier fehlerfrei definiert!
+                    const stationDb = db.prepare('SELECT azuracast_station_id, url_stub FROM stations WHERE id = ?').get(track.station_id);
+                    const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
+                    const stationStub = stationDb ? stationDb.url_stub : 'default';
+                    // Der exakte, dynamische Medien-Pfad für diese spezifische Station
+                    const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
+
+                    // API-Abfrage an AzuraCast senden
+                    const response = await fetch(`${process.env.AZURACAST_BASE_URL}/api/station/${stationStub}/media/${track.azuracast_media_id}`, {
+                        headers: { 'Authorization': `Bearer ${process.env.AZURACAST_API_KEY}` }
+                    });
                     
-                    // NEUE LOGIK: Wenn Playlists da -> mapped-to-playlist. 
-                    // Wenn KEINE Playlists da, war er aber SCHON MAL freigegeben? Dann ab ins archive!
-                    const currentFolder = track.filepath.split('/')[0];
-                    let expectedFolder = currentFolder;
+                    if (response.ok) {
+                        const azuraTrack = await response.json();
+                        const hasPlaylists = azuraTrack.playlists && azuraTrack.playlists.length > 0;
+                        
+                        // Aktuellen Ordner aus dem gespeicherten Filepath extrahieren (z.B. "mapped-to-playlist")
+                        const currentFolder = track.filepath.split('/')[0];
+                        let expectedFolder = currentFolder;
 
-                    if (hasPlaylists) {
-                        expectedFolder = 'mapped-to-playlist';
-                    } else if (currentFolder === 'mapped-to-playlist') {
-                        // Er war in einer Playlist, hat sie aber verloren -> ins Archiv verschieben
-                        expectedFolder = 'archive';
-                    }
+                        if (hasPlaylists) {
+                            expectedFolder = 'mapped-to-playlist';
+                        } else if (currentFolder === 'mapped-to-playlist') {
+                            // Wenn er die Playlist verloren hat -> ab ins Archiv
+                            expectedFolder = 'archive';
+                        }
 
-                    if (currentFolder !== expectedFolder) {
-                        const oldPath = path.join(baseMediaDir, track.filepath);
-                        const newFolder = path.join(baseMediaDir, expectedFolder);
-                        const newPath = path.join(newFolder, track.filename);
+                        // Wenn sich der Status geändert hat -> Datei auf Hetzner-Platte verschieben
+                        if (currentFolder !== expectedFolder) {
+                            const oldPath = path.join(baseMediaDir, track.filepath);
+                            const newFolder = path.join(baseMediaDir, expectedFolder);
+                            const newPath = path.join(newFolder, track.filename);
 
-                        if (!fs.existsSync(newFolder)) fs.mkdirSync(newFolder, { recursive: true });
+                            if (!fs.existsSync(newFolder)) {
+                                fs.mkdirSync(newFolder, { recursive: true });
+                            }
 
-                        if (fs.existsSync(oldPath)) {
-                            fs.renameSync(oldPath, newPath);
-                            const newRelativePath = `${expectedFolder}/${track.filename}`;
-                            db.prepare('UPDATE tracks SET filepath = ? WHERE id = ?').run(newRelativePath, track.id);
-                            console.log(`Track ${track.title} wurde automatisch nach /${expectedFolder} verschoben.`);
+                            if (fs.existsSync(oldPath)) {
+                                fs.renameSync(oldPath, newPath);
+                                
+                                // Berechtigungen für Docker-Container sicherstellen
+                                fs.chmodSync(newPath, 0o666);
+
+                                const newRelativePath = `${expectedFolder}/${track.filename}`;
+                                db.prepare('UPDATE tracks SET filepath = ? WHERE id = ?').run(newRelativePath, track.id);
+                                console.log(`[Auto-Sort] Track "${track.title}" erfolgreich nach /${expectedFolder} verschoben.`);
+                            }
                         }
                     }
+                } catch (syncErr) {
+                    console.error(`[Auto-Sort-Fehler] Track-ID ${track.id} fehlgeschlagen:`, syncErr.message);
                 }
-            } catch (syncErr) {
-                console.error(`Auto-Sortierung für Track ${track.id} fehlgeschlagen:`, syncErr.message);
             }
         }
-    }
-    
-    const pendingTracks = db.prepare(`
-        SELECT tracks.*, artists.name AS artist_name
-        FROM tracks JOIN artists ON tracks.artist_id = artists.id
-        WHERE tracks.status = 'eingereicht'
-        ORDER BY tracks.uploaded_at ASC
-    `).all();
-    
-    // Hole frische Daten aus der DB für die Anzeige
-    const artists = db.prepare('SELECT * FROM artists ORDER BY name ASC').all();
-    const allTracks = db.prepare('SELECT * FROM tracks ORDER BY uploaded_at DESC').all();
 
-    res.render('admin/overview', { 
-        artists, 
-        pendingTracks,
-        tracks: allTracks, 
-        error: req.query.err || null, 
-        message: req.query.msg || null 
-    });
+        // ====================================================================
+        // --- 2. DATEN FÜR DAS TEMPLATE LADEN (Nach dem Aufräumen) ---
+        // ====================================================================
+        const pendingTracks = db.prepare(`
+            SELECT tracks.*, artists.name AS artist_name
+            FROM tracks JOIN artists ON tracks.artist_id = artists.id
+            WHERE tracks.status = 'eingereicht' AND tracks.station_id = ?
+            ORDER BY tracks.uploaded_at ASC
+        `).all(adminStationId);
+
+        const artists = db.prepare(`
+            SELECT * FROM artists 
+            WHERE id IN (SELECT DISTINCT artist_id FROM tracks WHERE station_id = ?)
+            ORDER BY name ASC
+        `).all(adminStationId);
+        const allTracks = db.prepare('SELECT * FROM tracks WHERE station_id = ? ORDER BY uploaded_at DESC').all(adminStationId);
+
+        // Template rendern und alle Variablen sauber übergeben
+        return res.render('admin/overview', { 
+            artists: artists,
+            tracks: allTracks, 
+            pendingTracks: pendingTracks,
+            error: req.query.err || null, 
+            message: req.query.msg || null,
+            currentStation: null // Sicherheitsnetz für das Login-Layout
+        });
+
+    } catch (macroErr) {
+        console.error("[SCHWERER FEHLER] In GET /admin Hauptroute:", macroErr.message);
+        return res.status(500).send("Serverfehler im Admin-Bereich: " + macroErr.message);
+    }
+});
 
     /*
 
@@ -133,7 +219,7 @@ const tracks = db.prepare('SELECT * FROM tracks').all();
         error: req.query.err || null,
     });
     */
-});
+ 
 
 // --- Artist anlegen ---
 
@@ -195,7 +281,6 @@ router.post('/admin/tracks/:id/reject', requireAdmin, (req, res) => {
 
 // --- Track freigeben UND nach AzuraCast synchronisieren ---
 // playlistIds als kommaseparierte Liste im Formular (z.B. "3" oder "3,5")
-
 router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res) => {
     const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
     if (!track) {
@@ -208,45 +293,65 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
         .filter(Boolean)
         .map(Number);
 
-    const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+    // 1. DYNAMISCHE SENDER- UND PFADERMITTLUNG
+    const stationDb = db.prepare('SELECT azuracast_station_id, url_stub FROM stations WHERE id = ?').get(track.station_id);
+    const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
+    const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
+    // Die Basis des Senders: /var/lib/.../_data/SENDERORDNER/media
+   
+    const stationStub = stationDb ? stationDb.url_stub : 'default';
+    
+    // Findet die temporäre Quell-Datei fehlerfrei im /new-Ordner dieses Senders (z.B. new/hash.wav)
     const localPath = path.join(baseMediaDir, track.filepath);
  
     const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(track.artist_id);
 
     try {
-        const station = db.prepare('SELECT url_stub FROM stations WHERE id = ?').get(track.station_id);
-        const stationStub = station ? station.url_stub : 'default';
-
-        // Bestimmt den Zielordner im AzuraCast-Dateisystem
+        // Bestimmt den finalen Zielordner im virtuellen Dateisystem von AzuraCast
         const targetSubFolder = playlistIds.length > 0 ? 'mapped-to-playlist' : 'incoming';
         const targetFilename = `${targetSubFolder}/${track.filename}`;
 
-        let newMediaId;
-
-        // --- 1. STABILER AZURACAST-API-UPLOAD ---
+        // --- 1. MULTIPART-UPLOAD MIT LIVE-DEBUGGING ---
+        console.log(`[Import-Check] Typ von azuracast.uploadFile in der Route: ${typeof azuracast.uploadFile}`);
+        console.log(`[DEBUG-UPLOAD] Starte Upload an AzuraCast für Datei: ${localPath}`);
+        console.log(`[DEBUG-UPLOAD] Ziel-Pfad in AzuraCast: ${targetFilename}`);
+        console.log(`[DEBUG-UPLOAD] Verwendeter stationStub: "${stationStub}"`);
+        console.log(`[DEBUG-UPLOAD] Verwendeter stationStub: "${stationStub}"`);
+        
+        let result;
         if (track.azuracast_media_id) {
-            // Falls der Track schon existiert, ersetzen wir ihn über das API-Modul
-            newMediaId = await azuracast.replaceFile(
+            console.log(`[DEBUG-UPLOAD] Modus: Ersetzen von ID ${track.azuracast_media_id}`);
+            result = await azuracast.replaceFile(
+                stationStub,
                 track.azuracast_media_id,
                 localPath,
                 targetFilename,
                 playlistIds
             );
         } else {
-            // Wir nutzen die originale Upload-Funktion, die die Datei per Multipart-Form an die API übergibt
-            const result = await azuracast.uploadFile(localPath, targetFilename);
-            newMediaId = result.id || result.media_id;
-            
-            if (playlistIds.length > 0 && newMediaId) {
-                await azuracast.assignToPlaylists(newMediaId, playlistIds);
-            }
+            console.log(`[DEBUG-UPLOAD] Modus: Erst-Upload`);
+            result = await azuracast.uploadFile(stationStub, localPath, targetFilename);
         }
+
+        // MASSIVE INSPEKTION DER API-ANTWORT
+        console.log("==================================================");
+        console.log("[DEBUG-RESPONSE] Rohe API-Antwort von AzuraCast:");
+        console.log(JSON.stringify(result, null, 2));
+        console.log("==================================================");
+
+        newMediaId = result ? (result.id || result.media_id || result.unique_id) : null;
+        console.log(`[DEBUG-ID] Extrahierte newMediaId: "${newMediaId}" (Typ: ${typeof newMediaId})`);
 
         if (!newMediaId) {
-            throw new Error("AzuraCast hat den Upload nicht mit einer gültigen Media-ID bestätigt.");
+            throw new Error(`Keine gültige ID extrahiert. Rohes Resultat: ${JSON.stringify(result)}`);
         }
 
-        // --- 2. METADATEN- & COVER-SYNCHRONISATION ---
+        if (playlistIds.length > 0 && !track.azuracast_media_id) {
+            console.log(`[DEBUG-PLAYLIST] Weise Playlists zu: ${playlistIds.join(',')} für ID: ${newMediaId}`);
+            await azuracast.assignToPlaylists(stationStub, newMediaId, playlistIds);
+        }
+
+        // --- 2. METADATEN-UPGRADE MIT LIVE-TEST ---
         const rawLinks = db.prepare('SELECT platform, url FROM artist_links WHERE artist_id = ?').all(artist.id);
         const artistLinksMap = {};
         rawLinks.forEach(link => {
@@ -255,7 +360,11 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
             }
         });
 
-        await azuracast.setMetadata(newMediaId, {
+        console.log(`[DEBUG-METADATA] Sende Metadaten-Update an Station "${stationStub}" für ID: ${newMediaId}`);
+
+
+        // REPARIERT: stationStub als 1. Parameter übergeben, um die Metadaten im richtigen Sender zu sichern!
+        await azuracast.setMetadata(stationStub, newMediaId, {
             title: track.title,
             artist: artist.name,
             genre: track.genre || '',
@@ -269,22 +378,24 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
         const imagePath = path.join(__dirname, '..', 'public', 'track-images', track.image_filename);
         if (fs.existsSync(imagePath)) {
             try {
-                await azuracast.uploadArt(newMediaId, imagePath);
+                // REPARIERT: stationStub als 1. Parameter übergeben
+                await azuracast.uploadArt(stationStub, newMediaId, imagePath);
             } catch (artError) {
                 console.error('Album-Cover Upload fehlgeschlagen:', artError.message);
             }
         }
 
-        // --- 3. REDUNDANZ-ELIMINIERUNG (Die temporäre Upload-Datei löschen) ---
-        // Da AzuraCast die Datei nun erfolgreich kopiert und verarbeitet hat, 
-        // löschen wir die Quell-Datei aus dem Node-incoming-Ordner. 
-        // AzuraCast besitzt nun die einzige Kopie im Docker-Volume!
+        // --- 3. REDUNDANZ-ELIMINIERUNG (Temporäre Datei löschen) ---
+        // Da AzuraCast die Datei nun erfolgreich verarbeitet hat, fegen wir 
+        // die Quell-Datei aus dem /new-Unterordner des Senders von der Platte.
         if (fs.existsSync(localPath)) {
             fs.unlinkSync(localPath);
         }
 
         // --- 4. DATENBANK UPDATE ---
-        // Der Filepath in der DB zeigt nun direkt auf die von AzuraCast verwaltete Datei im Volume
+        // Der relative Filepath in der DB zeigt nun direkt auf das finale Ziel im Volume
+        const finalRelativeDbPath = `${targetSubFolder}/${track.filename}`;
+
         db.prepare(`
             UPDATE tracks
             SET status = 'freigegeben', 
@@ -293,7 +404,7 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
                 playlist_ids = ?, 
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        `).run(targetFilename, String(newMediaId), playlistIds.join(','), track.id);
+        `).run(finalRelativeDbPath, String(newMediaId), playlistIds.join(','), track.id);
 
         res.redirect('/admin?msg=Track erfolgreich freigegeben, Metadaten und Cover synchronisiert.');
     } catch (e) {
@@ -301,6 +412,7 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
         res.redirect(`/admin?err=${encodeURIComponent('AzuraCast-Sync fehlgeschlagen: ' + e.message)}`);
     }
 });
+
 // --- Track aus AzuraCast entfernen (z.B. nach Loeschung durch Artist) ---
 
 router.post('/admin/tracks/:id/remove-from-azuracast', requireAdmin, async (req, res) => {
@@ -322,7 +434,11 @@ router.get('/admin/tracks/:id/stream/:filename', requireAdmin, (req, res) => {
     const track = db.prepare('SELECT * FROM tracks WHERE id = ?').get(req.params.id);
     if (!track) return res.status(404).send('Track nicht gefunden.');
 
-    const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+    //const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+    const stationDb = db.prepare('SELECT azuracast_station_id, url_stub FROM stations WHERE id = ?').get(track.station_id);
+    const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
+    const stationStub = stationDb ? stationDb.url_stub : 'default';
+    const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
     
     // REPARIERT: Nutzt die exakte, playlistbasierte Pfadreferenz aus der Datenbank
     const absoluteFilePath = path.join(baseMediaDir, track.filepath);
@@ -344,7 +460,7 @@ router.post('/admin/artists/:id/delete', requireAdmin, async (req, res) => {
     console.log("==================================================");
 
     const artistId = req.params.id;
-    const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+    // const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
 
     // 1. Daten sichern, solange der Künstler noch in der DB existiert
     const artist = db.prepare('SELECT name FROM artists WHERE id = ?').get(artistId);
@@ -355,7 +471,9 @@ router.post('/admin/artists/:id/delete', requireAdmin, async (req, res) => {
     // Holt alle Tracks, um die Dateien auf der Platte zu finden
     const artistTracks = db.prepare('SELECT id, filepath, image_filename, azuracast_media_id, station_id FROM tracks WHERE artist_id = ?').all(artistId);
     console.log(`[DEBUG] ${artistTracks.length} Tracks erfolgreich aus der DB geladen.`);
+    
 
+                    
     // Wir ermitteln die Stations-Stubs im Vorfeld absolut fehlerfrei
     const stationMap = {};
     try {
@@ -366,16 +484,24 @@ router.post('/admin/artists/:id/delete', requireAdmin, async (req, res) => {
     }
 
     try {
-        // --- SCHRITT A: LOKALE DATEIEN SOFORT LÖSCHEN (Blitzschnell) ---
-        for (const track of artistTracks) {
+        // --- SCHRITT A: LOKALE DATEIEN SOFORT LÖSCHEN (Blitzschnell) --- 
+        for (const singleTrack of artistTracks) {         
+            // REPARIERT: Nutzt jetzt 'singleTrack.station_id' passend zur Schleifen-Variable!
+            const stationDb = db.prepare('SELECT azuracast_station_id, url_stub FROM stations WHERE id = ?').get(singleTrack.station_id);
+            const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
+            const stationStub = stationDb ? stationDb.url_stub : 'default';
+            
+            // Der exakte, dynamische Medien-Pfad für diese spezifische Station
+            const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');        
+        
             // Musikdatei löschen
-            if (track.filepath) {
-                const audioPath = path.join(baseMediaDir, track.filepath);
+            if (singleTrack.filepath) {
+                const audioPath = path.join(baseMediaDir, singleTrack.filepath);
                 if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
             }
             // Cover-Bild löschen
-            if (track.image_filename) {
-                const imagePath = path.join(__dirname, '..', 'public', 'track-images', track.image_filename);
+            if (singleTrack.image_filename) {
+                const imagePath = path.join(__dirname, '..', 'public', 'track-images', singleTrack.image_filename);
                 if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
             }
         }
@@ -390,29 +516,103 @@ router.post('/admin/artists/:id/delete', requireAdmin, async (req, res) => {
         setTimeout(async () => {
             console.log(`[Hintergrund-Job] Starte AzuraCast-Bereinigung fuer Kuenstler: ${artist.name}`);
             
-            for (const track of artistTracks) {
-                if (track.azuracast_media_id) {
-                    const stub = stationMap[track.station_id] || 'default';
+            // Nutzt 'singleTrack' als eindeutige Variable innerhalb der Schleife
+            for (const singleTrack of artistTracks) {
+                if (singleTrack.azuracast_media_id) {
+                    const stub = stationMap[singleTrack.station_id] || 'default';
                     try {
-                        // Korrekter AzuraCast API Endpunkt für das Löschen einer Datei anhand der Media-ID
-                        await fetch(`${process.env.AZURACAST_BASE_URL}/api/station/${stub}/media/${track.azuracast_media_id}`, {
+                        // REPARIERT: Greift jetzt fehlerfrei auf singleTrack zu!
+                        await fetch(`${process.env.AZURACAST_BASE_URL}/api/station/${stub}/media/${singleTrack.azuracast_media_id}`, {
                             method: 'DELETE',
                             headers: { 'Authorization': `Bearer ${process.env.AZURACAST_API_KEY}` }
                         });
-                        console.log(`[Hintergrund-Job] Track-ID ${track.id} erfolgreich aus AzuraCast geloescht.`);
+                        console.log(`[Hintergrund-Job] Track-ID ${singleTrack.id} erfolgreich aus AzuraCast geloescht.`);
                     } catch (apiErr) {
-                        console.error(`[Hintergrund-Job] Fehler beim Loeschen von Track ${track.id} aus AzuraCast:`, apiErr.message);
+                        console.error(`[Hintergrund-Job] Fehler beim Loeschen von Track ${singleTrack.id} aus AzuraCast:`, apiErr.message);
                     }
                 }
             }
-        }, 10); // Startet 10 Millisekunden nach der Server-Antwort
-
+        }, 10);
         // --- SCHRITT D: SOFORTIGE ANTWORT AN NGINX (Kein 504 Time-out physikalisch moeglich!) ---
         return res.redirect('/admin?msg=' + encodeURIComponent(`Kuenstler "${artist.name}" wurde erfolgreich aus dem Portal geloescht.`));
 
     } catch (err) {
         console.error('Schwerer Fehler in der Loesch-Route:', err.message);
         return res.redirect(`/admin?err=${encodeURIComponent('Fehler beim Loeschen: ' + err.message)}`);
+    }
+});
+
+
+// GET: Tiefen-Debugging für URL- und File-Mapping aller Stationen
+router.get('/admin/debug-stations', requireAdmin, async (req, res) => {
+    const debugReport = {
+        timestamp: new Date().toISOString(),
+        currentRequest: {
+            hostname: req.hostname,
+            headersHost: req.headers.host,
+            // Prüft, ob die Subdomain-Middleware in server.js gegriffen hat
+            detectedStationFromMiddleware: req.currentStation || "Keine Station im Request-Kontext (Globaler Admin-Modus)"
+        },
+        environment: {
+            AZURACAST_BASE_URL: process.env.AZURACAST_BASE_URL || "Nicht gesetzt",
+            AZURACAST_MEDIA_BASE_PATH: process.env.AZURACAST_MEDIA_BASE_PATH || "Nicht gesetzt"
+        },
+        stationsInDatabase: []
+    };
+
+    try {
+        // 1. Alle registrierten Radiostationen aus der DB laden
+        const stations = db.prepare('SELECT * FROM stations').all();
+
+        for (const station of stations) {
+            // Berechne die Pfade exakt so, wie es deine Upload- und Sortier-Routen tun
+            const baseMediaDir = path.join(globalDockerDir, station.azuracast_station_id, 'media');
+            const newFolder = path.join(globalDockerDir, 'new'); // Der globale Sammelordner
+            const mappedFolder = path.join(baseMediaDir, 'mapped-to-playlist');
+            const archiveFolder = path.join(baseMediaDir, 'archive');
+
+            // Statistiken für diese Station ermitteln
+            const trackCount = db.prepare('SELECT COUNT(*) AS count FROM tracks WHERE station_id = ?').get(station.id).count;
+            const artistCount = db.prepare('SELECT COUNT(*) AS count FROM artists WHERE id IN (SELECT artist_id FROM tracks WHERE station_id = ?)').get(station.id).count;
+
+            debugReport.stationsInDatabase.push({
+                stationId: station.id,
+                name: station.name,
+                urlStub: station.url_stub,
+                azuraStationIdOrFolder: station.azuracast_station_id,
+                expectedSubdomainUrl: `artists-${station.url_stub}.luziferase.de`,
+                databaseStats: {
+                    associatedTracks: trackCount,
+                    activeArtists: artistCount
+                },
+                fileMappingPaths: {
+                    calculatedBaseMediaDir: baseMediaDir,
+                    foldersCheck: {
+                        globalNewFolder: { path: newFolder, exists: fs.existsSync(newFolder) },
+                        mappedToPlaylistFolder: { path: mappedFolder, exists: fs.existsSync(mappedFolder) },
+                        archiveFolder: { path: archiveFolder, exists: fs.existsSync(archiveFolder) }
+                    }
+                }
+            });
+        }
+
+        // 2. Stichproben-Check für verwaiste oder falsch gemappte Tracks
+        const misconfiguredTracks = db.prepare(`
+            SELECT id, title, filename, filepath, station_id FROM tracks 
+            WHERE station_id NOT IN (SELECT id FROM stations)
+        `).all();
+        
+        debugReport.databaseIntegrityAnomalyCheck = {
+            tracksWithInvalidStationId: misconfiguredTracks.length,
+            affectedTrackDetails: misconfiguredTracks
+        };
+
+        // Gibt den gesamten Report als sauberes JSON im Browser aus
+        return res.json(debugReport);
+
+    } catch (err) {
+        console.error("[DEBUG-ROUTE FEHLER]:", err.message);
+        return res.status(500).json({ error: "Fehler beim Generieren des Debug-Reports", message: err.message });
     }
 });
 

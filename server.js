@@ -1,3 +1,5 @@
+//  (Subdomain-Middleware)
+
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -13,8 +15,6 @@ if (!fs.existsSync(dbPath)) {
 // Wir nutzen die bestehende DB-Instanz, um Datei-Sperren zu vermeiden
 const Database = require('better-sqlite3');
 const db = new Database(dbPath);
-
-
 
 const app = express();
 
@@ -41,51 +41,64 @@ app.use(session({
 const { i18next, middleware } = require('./lib/i18n');
 app.use(middleware.handle(i18next));
 
-// --- DYNAMISCHE MANDANTEN- & i18n-MIDDLEWARE ---
+// ====================================================================
+// --- REPARIERTE & UNZERSTÖRBARE MANDANTEN-MIDDLEWARE ---
+//     Der Hostname wird dynamisch gesplittet und analysiert, um den passenden Sender zu isolieren:
+// ====================================================================
 app.use((req, res, next) => {
+    // 1. i18n Sprach-Variablen global einspeisen
     res.locals.t = req.t;
     res.locals.lng = req.language;
 
-    // 1. Globale Admin-Routen überspringen die Mandanten-Prüfung
-    if (req.path.startsWith('/admin')) {
-        return next();
-    }
-
-    // 2. Ermittelt den URL-Stub aus dem Hostname (z.B. artists-basspistol.luziferase.de -> basspistol)
-    const host = req.headers.host || '';
-    const match = host.match(/^artists-([^.]+)\.luziferase\.de/i);
+    const host = req.headers.host || ''; // z.B. "bass.luziferase.de", "artists-basspistol.luziferase.de" oder "artists.luziferase.de"
     
-    // Fallback für den Direktaufruf (z.B. während der Einrichtung)
-    if (!match) {
-        req.currentStation = { id: 1, name: 'Luziferase Portal', url_stub: 'default' };
-        res.locals.currentStation = req.currentStation;
-        return next();
-    }
-    
-    // Korrekt aus der ersten Regex-Gruppe auslesen und in Kleinbuchstaben umwandeln
-    const stationStub = match[1].toLowerCase();
+    // Fallback-Standardwerte definieren
+    req.currentStation = null;
+    res.locals.currentStation = null;
 
-    // 3. Station aus der DB abfragen
-    try {
-        const station = db.prepare('SELECT * FROM stations WHERE url_stub = ?').get(stationStub);
+    // 2. Prüfen, ob wir uns auf einer Subdomain befinden (Wir ignorieren die nackte Hauptdomain)
+    if (host !== 'artists.luziferase.de' && host.includes('.luziferase.de')) {
         
-        if (!station) {
-            return res.status(404).send("Dieses Sender-Portal existiert nicht im System.");
+        // REPARIERT: Holt den exakten ersten Teil der Subdomain (z.B. "bass" aus "bass.luziferase.de")
+        let subdomain = host.split('.')[0].toLowerCase();
+        
+        // Falls der Hoster "artists-bass" liefert, schneiden wir es sauber ab
+        if (subdomain.startsWith('artists-')) {
+            subdomain = subdomain.replace('artists-', '');
+        }
+        
+        // Schneidet das alte "artists-" Präfix ab, falls es im Hostname enthalten ist
+        if (subdomain.startsWith('artists-')) {
+            subdomain = subdomain.replace('artists-', '');
         }
 
-        // 4. Daten an Request und Templates übergeben
-        req.currentStation = station;
-        res.locals.currentStation = station;
-        process.env.SITE_URL = `https://${host}`;
-    } catch (dbErr) {
-        console.error("Fehler bei der Stationsabfrage in server.js:", dbErr.message);
-        // Sicherer Fallback bei DB-Konflikten
-        req.currentStation = { id: 1, name: 'Luziferase Portal', url_stub: 'default' };
-        res.locals.currentStation = req.currentStation;
+        console.log(`[Mandant] Subdomain erkannt: "${subdomain}" für Host: ${host}`);
+
+        try {
+            // Sucht den passenden Sender in der SQLite-Datenbank
+            const station = db.prepare('SELECT * FROM stations WHERE url_stub = ?').get(subdomain);
+            
+            if (station) {
+                req.currentStation = station;
+                res.locals.currentStation = station; // Macht die Stationsdaten in JEDEM EJS-Template verfügbar!
+                process.env.SITE_URL = `https://${host}`;
+            } else {
+                console.log(`[Mandant-Warnung] Kein Datenbank-Eintrag für url_stub: "${subdomain}"`);
+                // Falls du als Admin eingeloggt bist, blockieren wir dich nicht mit einem 404
+                if (!req.path.startsWith('/admin')) {
+                    return res.status(404).send("Dieses Sender-Portal existiert nicht im System.");
+                }
+            }
+        } catch (dbErr) {
+            console.error("Fehler bei Mandanten-Datenbankabfrage:", dbErr.message);
+        }
+    } else {
+        console.log(`[Mandant] Hauptdomain oder globaler Zugriff: ${host}`);
     }
 
     next();
 });
+// ====================================================================
 
 app.get('/', (req, res) => res.redirect('/login'));
 

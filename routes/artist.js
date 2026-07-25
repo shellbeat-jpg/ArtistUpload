@@ -25,7 +25,15 @@ const audioMetadataParser  = require('music-metadata');
 require('dotenv').config();
 
 // Ermittelt die Basis-Konfiguration
-const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+// const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+// Ermittelt das globale Docker-Mutterverzeichnis aus der .env
+//const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docker/volumes/azuracast_station_data/_data';
+
+// Baut den Pfad vollautomatisch stationsspezifisch zusammen!
+// Ergebnis für Basspistol: /.../_data/luziferase/media
+// Ergebnis für Bass:       /.../_data/bass/media
+
  
 // Middleware: Weiterleitung falls bereits eine aktive Session existiert
 function redirectIfLoggedIn(req, res, next) {
@@ -222,7 +230,8 @@ router.post('/register', async (req, res) => {
         const verificationLink = `${process.env.SITE_URL}/verify/${verificationToken}`;
         const stationName = req.currentStation.name;
         const mailOptions = {
-            from: process.env.SMTP_FROM,
+            // from: process.env.SMTP_FROM,
+            from: req.currentStation.email_from || 'post@luziferase.de',
             to: email,
             subject: `[${stationName}] ${req.t('email.subjectVerify', { defaultValue: 'Aktivierung deines Accounts' })}`,
             text: `${req.t('email.textVerify')}\n\n${verificationLink}`
@@ -391,8 +400,11 @@ router.get('/tracks/:id/stream/:filename', requireArtist, (req, res) => {
     if (!track) return res.status(404).send('Track nicht gefunden.');
 
     // Nutzt den zentralen Basispfad aus der .env (z.B. /var/lib/.../media)
-    const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
-    
+    // const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
+    const baseMediaDir = req.currentStation 
+        ? path.join(globalDockerDir, req.currentStation.azuracast_station_id, 'media')
+        : globalDockerDir;
+        
     // REPARIERT: Da track.filepath in der DB nun z.B. 'new/abc.wav' oder 'mapped-to-playlist/abc.wav' 
     // speichert, baut path.join daraus automatisch den perfekten absoluten Pfad!
     const absoluteFilePath = path.join(baseMediaDir, track.filepath);
@@ -536,6 +548,39 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
                 `/dashboard?err=${encodeURIComponent(`Kontingent ueberschritten! Dir verbleiben noch ${remainingMinutes} Minuten Gesamtsendezeit.`)}`
             );
         }
+        
+        
+        // --- REPARIERT: Holt den echten Ordnernamen der aktuell aufgerufenen Subdomain ---
+        // ID 1 -> 'luziferase', ID 3 -> 'bass'
+        const stationFolder = req.currentStation ? req.currentStation.azuracast_station_id : 'luziferase';
+        
+        // Holt die globale Docker-Basis aus der .env (endet auf /_data)
+        const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docker/volumes/azuracast_station_data/_data';
+        
+        // Bestimmt den exakten, stationsspezifischen Zielordner für neue Tracks
+        const targetAudioDir = path.join(globalDockerDir, stationFolder, 'media', 'new');
+        
+        // Ordner automatisch anlegen, falls er für diese Station noch nicht existiert
+        if (!fs.existsSync(targetAudioDir)) {
+            fs.mkdirSync(targetAudioDir, { recursive: true });
+            fs.chmodSync(targetAudioDir, 0o777); // Berechtigungen für Docker-Container freigeben
+        }
+
+        // Der physische Zielpfad auf der Hetzner-Festplatte
+        const finalDestinationPath = path.join(targetAudioDir, trackFile.filename);
+
+        // Verschiebt die Datei aus dem globalen Sammelordner (/_data/new/) 
+        // punktgenau in den /new-Ordner der jeweiligen Station (z.B. /_data/bass/media/new/)
+        if (fs.existsSync(trackFile.path)) {
+            fs.renameSync(trackFile.path, finalDestinationPath);
+            fs.chmodSync(finalDestinationPath, 0o666); // Datei für den Docker-Container lesbar machen
+        }
+
+        // --- DATENBANK UPDATE: Relativen Pfad passend zum neuen Ziel abspeichern ---
+        // Speichert 'new/dateiname.ext' -> Deine Streaming-Route weiß später über baseMediaDir, 
+        // wo sie suchen muss!
+        const relativeDbPath = `new/${trackFile.filename}`;
+        
         // ====================================================================
         // --- ENDE DER NEUEN PRÜFUNG (Es folgt dein INSERT INTO tracks) ---
         // ====================================================================
@@ -557,10 +602,26 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
             (req.body.video_url || '').trim(),
             imageFile.filename,
             trackFile.filename,
-            `new/${trackFile.filename}`,
+            relativeDbPath, // `new/${trackFile.filename}`,
             fileSizeMb,
             durationSeconds // 13. Parameter für das zeitbasierte Kontingent
         );
+
+        const adminMailOptions = {
+            from: req.currentStation.email_from,
+            // VORHER: to: process.env.ADMIN_EMAIL,
+            // NACHHER: Schickt die Mail an das Postfach des Senders, wo hochgeladen wurde!
+            to: req.currentStation.email_admin || 'post@luziferase.de',
+            subject: `[${req.currentStation.name}] Neuer Track eingereicht`,
+            text: `Der Künstler ${artist.name} hat einen neuen Track hochgeladen...`
+        };
+        transporter.sendMail(adminMailOptions, (mailErr) => {
+            if (mailErr) {
+               // console.error("Benachrichtigung-Mail fehlgeschlagen:", mailErr.message);
+            }    
+            //req.session.flashMessage = req.t('register.successMailSent');
+        });
+
 
         res.redirect(`/dashboard?msg=${encodeURIComponent(req.t('messages.trackUploaded'))}`);
     });
@@ -573,6 +634,11 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
 // "eingereicht" zurueckgesetzt, damit der Admin die Aenderung im Ueberblick sieht.
 
 router.post('/tracks/:id/replace', requireArtist, (req, res) => {
+    // Dynamische Pfaderststellung innerhalb der Route sichern
+    const baseMediaDir = req.currentStation 
+        ? path.join(globalDockerDir, req.currentStation.azuracast_station_id, 'media')
+        : globalDockerDir;
+
     upload.fields([{ name: 'track', maxCount: 1 }, { name: 'image', maxCount: 1 }])(req, res, async (err) => {
         if (err) {
             return res.redirect(`/dashboard?err=${encodeURIComponent(err.message)}`);
@@ -612,8 +678,6 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
 
         const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(req.session.artistId);
 
-        // Audiodatei ist beim Ersetzen optional (nur Angaben aendern ist auch erlaubt);
-        // Bild ist ebenfalls optional beim Ersetzen (Pflicht nur beim Erst-Upload).
         let newFilename = track.filename;
         let newFilepath = track.filepath;
         let newFilesizeMb = track.filesize_mb;
@@ -644,16 +708,28 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                 );
             }
 
-            // Wenn alles okay ist, alte Datei löschen und neue Werte setzen
-            const oldTrackSubFolder = track.status === 'freigegeben' ? `artists/${artist.id}` : 'new';
-            const oldLocalPath = path.join(baseMediaDir, oldTrackSubFolder, track.filename);
-            if (fs.existsSync(oldLocalPath)) fs.unlinkSync(oldLocalPath);
+            // --- A. ALTE DATEI STATIONSSPEZIFISCH LÖSCHEN ---
+            const oldLocalPath = path.join(baseMediaDir, track.filepath);
+            if (fs.existsSync(oldLocalPath)) {
+                fs.unlinkSync(oldLocalPath);
+            }
 
-            newFilename = trackFile.originalname;
+            // --- B. NEUE DATEI IN SENDER-NEW-ORDNER VERSCHIEBEN ---
+            const targetNewDir = path.join(baseMediaDir, 'new');
+            if (!fs.existsSync(targetNewDir)) {
+                fs.mkdirSync(targetNewDir, { recursive: true });
+                fs.chmodSync(targetNewDir, 0o777); // Rechte für Docker freigeben
+            }
+
+            const finalDestinationPath = path.join(targetNewDir, trackFile.filename);
+            if (fs.existsSync(trackFile.path)) {
+                fs.renameSync(trackFile.path, finalDestinationPath);
+                fs.chmodSync(finalDestinationPath, 0o666); // Datei für Docker lesbar machen
+            }
+
+            newFilename = trackFile.filename;
             newFilepath = `new/${trackFile.filename}`;
             newFilesizeMb = trackFile.size / (1024 * 1024);
-            
-            // KORREKTUR: Nutzt jetzt die oben sauber deklarierte CamelCase-Variable!
             durationSeconds = newDurationSeconds;  
         }
 
@@ -694,20 +770,29 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
             try {
                 let mediaId = track.azuracast_media_id;
 
-                // Audiodatei wurde ersetzt -> alte AzuraCast-Datei ersetzen und dabei
-                // dieselben Playlists erneut zuordnen (aus der Admin-Freigabe gemerkt).
                 if (trackFile) {
-                    // const localPath = path.join(__dirname, '..', 'uploads', newFilepath);
-                    const localPath = path.join(baseMediaDir, 'incoming', newFilepath);
- 
-                    const targetFilename = `artists/${artist.id}/${newFilepath}`;
+                    // Nimmt den frisch in den neuen Stations-New-Ordner umsortierten Pfad
+                    const localPath = path.join(baseMediaDir, newFilepath);
+                    
+                    // Korrigiert: Nutzt targetFilename ohne Pfad-Verdopplungen für AzuraCast
+                    const targetFilename = `new/${trackFile.filename}`;
                     const playlistIds = (track.playlist_ids || '')
                         .split(',')
                         .map((s) => s.trim())
                         .filter(Boolean)
-                        .map(Number);
-                    mediaId = await azuracast.replaceFile(track.azuracast_media_id, localPath, targetFilename, playlistIds);
+                        .map(Number); 
+                    const stationStub = req.currentStation ? req.currentStation.url_stub : 'default';
+                    mediaId = await azuracast.replaceFile(stationStub, track.azuracast_media_id, localPath, targetFilename, playlistIds);       
                 }
+
+                // Generiert die Social-Links-Map direkt aus der DB für diese Station
+                const rawLinks = db.prepare('SELECT platform, url FROM artist_links WHERE artist_id = ?').all(artist.id);
+                const artistLinksMap = {};
+                rawLinks.forEach(link => {
+                    if (link.platform && link.url) {
+                        artistLinksMap[`url_${link.platform.toLowerCase()}`] = link.url;
+                    }
+                });
 
                 await azuracast.setMetadata(mediaId, {
                     title: req.body.title.trim(),
@@ -715,9 +800,9 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                     genre: (req.body.genre || '').trim(),
                     lyrics: (req.body.bio_lyrics || '').trim(),
                     bpm: req.body.bpm ? parseInt(req.body.bpm, 10) : null,
-                    url_track: (req.body.url_track || '').trim(),
+                    url_track: (req.body.track_page_url || '').trim(),
                     url_artist: artist.artist_page_url,
-                    links: getArtistLinksMap(artist.id),
+                    links: artistLinksMap,
                 });
 
                 if (imageFile) {
@@ -730,7 +815,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
                 db.prepare('UPDATE tracks SET azuracast_media_id = ? WHERE id = ?').run(String(mediaId), track.id);
             } catch (e) {
                 console.error(`AzuraCast-Sync fuer Track ${track.id} (Bearbeitung) fehlgeschlagen:`, e.message);
-                syncNote = req.t('messages.syncFailedNote');
+                syncNote = " " + req.t('messages.syncFailedNote');
             }
         }
 
@@ -751,7 +836,10 @@ router.post('/tracks/:id/delete', requireArtist, (req, res) => {
     if (!track) {
         return res.redirect(`/dashboard?err=${encodeURIComponent(req.t('messages.trackNotFound'))}`);
     }
-
+    const baseMediaDir = req.currentStation 
+        ? path.join(globalDockerDir, req.currentStation.azuracast_station_id, 'media')
+        : globalDockerDir;
+        
     // const localPath = path.join(__dirname, '..', 'uploads', track.filepath);
     const trackSubFolder = track.status === 'freigegeben' ? `artists/${track.artist_id}` : 'incoming';
     const localPath = path.join(baseMediaDir, trackSubFolder, track.filename);

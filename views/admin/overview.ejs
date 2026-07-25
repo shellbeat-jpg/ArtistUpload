@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Admin — Luziferase Upload</title>
+    <title><%= (currentStation && currentStation.title_branding) ? currentStation.title_branding : '' %> - Admin Dashboard</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <div class="wrap">
-    <div class="eyebrow">Luziferase on Air</div>
+    <div class="eyebrow"><%= (currentStation && currentStation.title_branding) ? currentStation.title_branding :  'Artist Portal ' %> - Admin Dashboard</div>
     <h1>Admin</h1>
     <p class="subtitle">Artists verwalten, Tracks pruefen und mit AzuraCast synchronisieren.</p>
 
@@ -46,7 +46,7 @@
                   <!-- In der Track-Liste des Admins einfügen -->
                   <div style="margin-top: 8px;">
                     <audio controls preload="none" style="width: 100%; max-width: 400px; margin-top: 8px;">
-                        <source src="/admin/tracks/<%= track.id %>/stream/<%= encodeURIComponent(track.filename) %>" type="audio/mpeg">
+                        <source src="/admin/tracks/<%= track.id %>/stream/<%= encodeURIComponent(track.filename) %>" type="audio/mpeg">   
                     </audio>
                   </div>  
                     

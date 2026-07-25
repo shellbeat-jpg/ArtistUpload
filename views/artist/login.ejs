@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><%= t('login.title') %> — <%= t('common.stationName') %></title>
+    <title><%= (currentStation && currentStation.title_branding) ? currentStation.title_branding : 'Artist Portal' %></title>
     <link rel="stylesheet" href="/style.css">
     
     <style>
@@ -31,7 +31,7 @@
             <a href="?lng=de">DE</a> · <a href="?lng=en">EN</a>
         </div>
         <div class="eyebrow"><%= t('common.stationName') %></div>
-        <h1><%= currentStation.title_branding || t('login.title') %></h1>
+        <h1><%= (currentStation && currentStation.title_branding) ? currentStation.title_branding : t('login.title') %></h1>
         
          <!-- Hierher verschoben: Erfolgsmeldung direkt unter dem Titel -->
           <% if (typeof successMessage !== 'undefined' && successMessage) { %>

@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Admin-Login — Luziferase Upload</title>
+    <title><%= (currentStation && currentStation.title_branding) ? currentStation.title_branding : '' %> - Admin Dashboard</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <div class="wrap" style="max-width: 420px; padding-top: 96px;">
-        <div class="eyebrow">Luziferase on Air</div>
+        <div class="eyebrow"><%= (currentStation && currentStation.title_branding) ? currentStation.title_branding  : ''   %> Admin Dashboard</div>
         <h1>Admin-Login</h1>
         <p class="subtitle">Verwaltung von Artists und eingereichten Tracks.</p>
 
