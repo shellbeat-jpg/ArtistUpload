@@ -221,7 +221,7 @@ router.post('/register', async (req, res) => {
             verificationToken,
             req.currentStation.id
         );
-
+                              
         // 6. Die neue Artist-ID abgreifen und Social-Media Links verknüpfen
         const newArtistId = info.lastInsertRowid;
         saveArtistLinks(newArtistId, links);
@@ -234,15 +234,18 @@ router.post('/register', async (req, res) => {
             from: req.currentStation.email_from || 'post@luziferase.de',
             to: email,
             subject: `[${stationName}] ${req.t('email.subjectVerify', { defaultValue: 'Aktivierung deines Accounts' })}`,
-            text: `${req.t('email.textVerify')}\n\n${verificationLink}`
-        };   
+            text: `${req.t('email.textVerify_0')} ${artist_name.trim()} ${req.t('email.textVerify')} \n\n${verificationLink}`,
+            html: `<p>${req.t('email.textVerify_0')} ${artist_name.trim()} <br />${req.t('email.textVerify')}</p>
+                   <p><a href="${verificationLink}">${verificationLink}</a></p>`
+        };
+         
 
         transporter.sendMail(mailOptions, (mailErr) => {
             if (mailErr) {
                 console.error("Registrierungs-Mail fehlgeschlagen:", mailErr.message);
             }    
             req.session.flashMessage = req.t('register.successMailSent');
-            res.redirect('/login');
+            res.redirect('/artist/login');
         });
 
     } catch (dbError) {
@@ -273,7 +276,7 @@ router.get('/verify/:token', (req, res) => {
    
     req.session.flashMessage = req.t('register.successAccountActivated') || 'Dein Account wurde erfolgreich aktiviert. Du kannst dich jetzt einloggen.';
 
-    res.redirect(`/login`);
+    res.redirect(`/artist/login`);
 });
 
 
@@ -538,7 +541,12 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
         if (err) {
             return res.redirect(`/artist/dashboard?err=${encodeURIComponent(err.message)}`);
         }
-
+        
+   
+        if (req.currentStation.id) {
+            console.error("upload currentStation id:", req.currentStation.id); 
+        }
+        
         const trackFile = req.files?.track?.[0];
         const imageFile = req.files?.image?.[0];
 
@@ -652,7 +660,7 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
         // ====================================================================
         // --- ENDE DER NEUEN PRÜFUNG (Es folgt dein INSERT INTO tracks) ---
         // ====================================================================
-        
+            
         db.prepare(`
             INSERT INTO tracks (
                 artist_id, station_id, title, genre, bio_lyrics, bpm, track_page_url, video_url,
@@ -674,7 +682,9 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
             fileSizeMb,
             durationSeconds // 13. Parameter für das zeitbasierte Kontingent
         );
-
+        
+        //console.error("adminMailOptions:", req.currentStation.email_admin);
+        
         const adminMailOptions = {
             from: req.currentStation.email_from,
             // VORHER: to: process.env.ADMIN_EMAIL,
@@ -685,7 +695,7 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
         };
         transporter.sendMail(adminMailOptions, (mailErr) => {
             if (mailErr) {
-               // console.error("Benachrichtigung-Mail fehlgeschlagen:", mailErr.message);
+                console.error("Benachrichtigung-Mail fehlgeschlagen:", mailErr.message);
             }    
             //req.session.flashMessage = req.t('register.successMailSent');
         });

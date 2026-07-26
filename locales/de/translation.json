@@ -32,7 +32,8 @@
   },
   "email": {
     "subjectVerify": "Aktiviere deinen Artist-Account - Luziferase on Air",
-    "textVerify": "Hallo!\n\nBitte klicke auf den folgenden Link, um deine Registrierung im Artist-Upload-Portal abzuschließen:"
+    "textVerify_0": "Hallo",
+    "textVerify": "!\n\nBitte klicke auf den folgenden Link, um deine Registrierung im Artist-Upload-Portal abzuschließen:"
   },
   "dashboard": {
     "subtitle": "Deine Tracks, deine Angaben.",
@@ -40,7 +41,7 @@
     "profileHeading": "Profil",
     "artistName": "Artist Name",
     "artistPageUrl": "URL Artist Page",
-    "bio": "Bio (Freitext, optional)",
+    "bio": "Whatever (optional - wird unterhalb vom Tracks angezeigt falls Track Info leer ist)",
     "contactEmail": "E-Mail",
     "contactPhone": "Kontakt Telefon (optional)",
     "contactHint": "Mindestens Telefon oder E-Mail als Kontakt angeben.",
@@ -54,7 +55,7 @@
     "bpmOptional": "BPM (optional)",
     "trackPageUrl": "URL Track Page (optional)",
     "videoUrlOptional": "URL Video (optional)",
-    "bioLyrics": "Bio / Lyrics / Whatever (Freitext, optional)",
+    "bioLyrics": "Track Info (optional - wird unterhalb vom Tracks angezeigt)",
     "audioFile": "Audiodatei (FLAC / WAV / MP3)",
     "trackImage": "Track Image",
     "uploadSubmit": "Hochladen",
@@ -70,7 +71,8 @@
     "save": "Speichern",
     "deleteConfirm": "Track wirklich loeschen?",
     "delete": "Loeschen",
-    "logout": "Abmelden"
+    "logout": "Abmelden",
+    "all_rights": "Mit dem Upload erkläre ich hiermit nicht gegen die Urheberrechte von Dritten zu verstoßen."
   },
   "messages": {
     "profileNameRequired": "Artist Name darf nicht leer sein.",

@@ -53,10 +53,10 @@
                 var formData = new FormData();
                 formData.append('track', fileInput.files[0]);
 
-                fetch('/tracks/analyze-bpm', { method: 'POST', body: formData })
+                fetch('/artist/tracks/analyze-bpm', { method: 'POST', body: formData })
                     .then(function (res) { return res.json(); })
                     .then(function (data) {
-                        if (data && data.bpm) {
+                        if (data && data.bpm != null) {
                             bpmInput.value = data.bpm;
                         }
                     })
@@ -164,7 +164,7 @@
 
             <label for="image"><%= t('dashboard.trackImage') %></label>
             <input type="file" id="image" name="image" accept="image/*" required>
-
+            <label for="image"><%= t('dashboard.all_rights') %></label>
             <button type="submit" id="upload-submit" data-label-analyzing="<%= t('dashboard.analyzing') %>"><%= t('dashboard.uploadSubmit') %></button>
         </form>
     </div>
@@ -205,7 +205,7 @@
             
             <!-- NEU: Integrierter Player für den Artist -->
             <audio controls preload="none" style="width: 100%; margin-top: 10px;">
-                <source src="/tracks/<%= track.id %>/stream/<%= encodeURIComponent(track.filename) %>" type="audio/mpeg">
+                <source src="/artist/tracks/<%= track.id %>/stream/<%= encodeURIComponent(track.filename) %>" type="audio/mpeg">
                 Dein Browser unterstützt den Player nicht.
             </audio>
             

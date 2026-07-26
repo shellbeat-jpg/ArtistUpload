@@ -31,7 +31,8 @@
   },
   "email": {
     "subjectVerify": "Activate your Artist Account - Luziferase on Air",
-    "textVerify": "Hello!\n\nPlease click the following link to complete your registration in the Artist Upload Portal:"
+    "textVerify_0": "Hello",
+    "textVerify": "!\n\nPlease click the following link to complete your registration in the Artist Upload Portal:"
   },
   "dashboard": {
     "subtitle": "Your tracks, your details.",
@@ -39,7 +40,7 @@
     "profileHeading": "Profile",
     "artistName": "Artist name",
     "artistPageUrl": "Artist page URL",
-    "bio": "Bio (free text, optional)",
+    "bio": "Whatever (optional - will appear under the track if the track info is blank)",
     "contactEmail": "Email",
     "contactPhone": "Contact phone (optional)",
     "contactHint": "Please provide at least an email address.",
@@ -53,7 +54,7 @@
     "bpmOptional": "BPM (optional)",
     "trackPageUrl": "Track page URL (optional)",
     "videoUrlOptional": "Video URL (optional)",
-    "bioLyrics": "Bio / lyrics / whatever (free text, optional)",
+    "bioLyrics": "Track info (optional - will appear under the track)",
     "audioFile": "Audio file (FLAC / WAV / MP3)",
     "trackImage": "Track image",
     "uploadSubmit": "Upload",
@@ -69,7 +70,8 @@
     "save": "Save",
     "deleteConfirm": "Really delete this track?",
     "delete": "Delete",
-    "logout": "Log out"
+    "logout": "Log out",
+    "all_rights": "By uploading, I confirm that I am not infringing on the copyrights of third parties."
   },
   "messages": {
     "profileNameRequired": "Artist name must not be empty.",
