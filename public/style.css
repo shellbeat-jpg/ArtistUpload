@@ -103,7 +103,7 @@ button, .btn {
     font-size: 13px;
     letter-spacing: 0.02em;
     cursor: pointer;
-    margin-top: 18px;
+    margin-top: 0px;
     text-decoration: none;
 }
 button:hover, .btn:hover { background: #ff6544; }
@@ -211,3 +211,4 @@ a { color: var(--accent); }
 }
 
 .hint { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+

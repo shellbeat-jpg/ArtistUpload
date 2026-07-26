@@ -227,7 +227,7 @@ router.post('/register', async (req, res) => {
         saveArtistLinks(newArtistId, links);
 
         // 7. Aktivierungs-E-Mail absenden
-        const verificationLink = `${process.env.SITE_URL}/verify/${verificationToken}`;
+        const verificationLink = `${process.env.SITE_URL}/artist/verify/${verificationToken}`;
         const stationName = req.currentStation.name;
         const mailOptions = {
             // from: process.env.SMTP_FROM,

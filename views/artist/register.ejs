@@ -42,15 +42,15 @@
                             -->
             <label for="artist_page_url"><%= t('dashboard.artistPageUrl') %> *</label>
             <input type="text" id="artist_page_url" name="artist_page_url" value="<%= safeData.artist_page_url || '' %>"  placeholder="https://..." required>
-
+                 <!-- 
             <label for="bio"><%= t('dashboard.bio') %></label>
             <textarea id="bio" name="bio" rows="3" style="width:100%; background:#0a0a0d; border:1px solid var(--panel-border); color:var(--text); padding:10px 12px; border-radius:3px; font-family:var(--font-mono); font-size:14px;"><%= safeData.bio || '' %></textarea>
-
+                        -->
             <p class="hint" style="margin-top: 12px; margin-bottom: 24px;"><%= t('dashboard.contactHint') %></p>
 
             <!-- Links-Muster für Streaming-Plattformen -->
             <label><%= t('dashboard.linksHeading') %></label>
-            <p class="hint" style="margin-bottom: 12px;"><%= t('dashboard.linksHint') %></p>
+            <p class="hint" style="margin-bottom: 12px;"><%= t('dashboard.linksHint') %></p>   
             
             <% for (let i = 0; i < 3; i++) { 
                 const submittedPlatform = safeData['link_platform_' + (i + 1)] || '';

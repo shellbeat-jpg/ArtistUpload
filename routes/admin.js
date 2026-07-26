@@ -286,7 +286,10 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
     if (!track) {
         return res.redirect('/admin?err=Track nicht gefunden.');
     }
+    
 
+    console.log(`[DEBUG-SYNC] Track ID: get(req.params.id)`);
+    
     const playlistIds = (req.body.playlist_ids || '')
         .split(',')
         .map((s) => s.trim())
@@ -305,7 +308,9 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
     const localPath = path.join(baseMediaDir, track.filepath);
  
     const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(track.artist_id);
-
+    
+    console.log(`[DEBUG-SYNC] Artist ID: get(track.artist_id)`);
+    
     try {
         // Bestimmt den finalen Zielordner im virtuellen Dateisystem von AzuraCast
         const targetSubFolder = playlistIds.length > 0 ? 'mapped-to-playlist' : 'incoming';
@@ -315,7 +320,7 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
         console.log(`[Import-Check] Typ von azuracast.uploadFile in der Route: ${typeof azuracast.uploadFile}`);
         console.log(`[DEBUG-UPLOAD] Starte Upload an AzuraCast für Datei: ${localPath}`);
         console.log(`[DEBUG-UPLOAD] Ziel-Pfad in AzuraCast: ${targetFilename}`);
-        console.log(`[DEBUG-UPLOAD] Verwendeter stationStub: "${stationStub}"`);
+         
         console.log(`[DEBUG-UPLOAD] Verwendeter stationStub: "${stationStub}"`);
         
         let result;

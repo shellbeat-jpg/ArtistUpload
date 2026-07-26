@@ -19,5 +19,9 @@ views/artist/-login.ejs
 lib/---azuracast.js
 lib/__azuracast.js
 routes/--admin.js
+public/adminer-plugins.php
+public/adminer-plugins/
+public/adminer.php
+public/css/
 
 
