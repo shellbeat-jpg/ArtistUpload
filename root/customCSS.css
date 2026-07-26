@@ -1,0 +1,71 @@
+@import url('/css/stations/style.css');
+
+body.station-bass {
+  	background: #752121 var(--public-page-bg) !important;
+  	background-position: 50%;
+  	background-size: cover;
+  	background-attachment: fixed;
+}
+
+.card-help-icon {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    font-weight: bold;
+    font-size: 0.85rem;
+    cursor: pointer;
+    z-index: 15;
+    user-select: none;
+}
+.card-help-icon:hover {
+    background: rgba(255,255,255,0.3);
+}
+
+.card-help-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.9);
+    color: #fff;
+    padding: 24px;
+    z-index: 20;
+    display: none;
+    overflow-y: auto;
+    border-radius: inherit; /* falls die Card abgerundete Ecken hat */
+}
+.card-help-overlay.open {
+    display: block;
+}
+.card-help-overlay .close-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    background: none;
+    border: none;
+    color: #fff;
+}
+
+/* BPM-Sync-Animation für den Player-Hintergrund/Visual-Element */
+.player-visual {
+  --beat-duration: 0.5s; /* Fallback-Wert, wird per JS überschrieben */
+  --color-a: #1a1a2e;    /* an eure Bass-Music-Farbwelt anpassen */
+  --color-b: #e94560;
+
+  animation: bpm-pulse var(--beat-duration) ease-in-out infinite;
+  animation-play-state: paused; /* startet erst, wenn gültiger BPM vorliegt */
+}
+
+@keyframes bpm-pulse {
+  0%   { filter: brightness(1) saturate(1); }
+  50%  { filter: brightness(1.3) saturate(1.4); }
+  100% { filter: brightness(1) saturate(1); }
+}

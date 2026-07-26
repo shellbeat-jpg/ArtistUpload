@@ -1,0 +1,12 @@
+version: '2.2'
+
+services:
+  web:
+    volumes:
+      - /var/azuracast/nginx_custom/upload_limit.conf:/etc/nginx/azuracast.conf.d/upload_limit.conf:ro
+      - /var/azuracast/nginx_custom/php_upload.ini:/usr/local/etc/php/conf.d/upload_limit.ini:ro
+
+
+      
+ 
+
