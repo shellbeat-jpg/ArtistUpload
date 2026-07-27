@@ -27,6 +27,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const artistRoutes = require('./routes/artist');
 const adminRoutes = require('./routes/admin');
+const publicRoutes = require('./routes/public');
+
+
+ 
 
 app.use(session({
     secret: process.env.SESSION_SECRET || 'bitte-in-.env-aendern',
@@ -46,46 +50,57 @@ app.use(middleware.handle(i18next));
 //     Der Hostname wird dynamisch gesplittet und analysiert, um den passenden Sender zu isolieren:
 // ====================================================================
 app.use((req, res, next) => {
-    // 1. i18n Sprach-Variablen global einspeisen
+    // 0. CORS
+    const origin = req.headers.origin || '';
+    const isAllowed =
+        /^https:\/\/azuracast\.luziferase\.de$/i.test(origin) ||
+        /^https:\/\/stream\.luziferase\.de$/i.test(origin) ||
+        /^https:\/\/([a-z0-9-]+)\.luziferase\.de$/i.test(origin);
+
+    if (isAllowed) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Vary', 'Origin');
+    }
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+
+    // 1. i18n
     res.locals.t = req.t;
     res.locals.lng = req.language;
 
-    const host = req.headers.host || ''; // z.B. "bass.luziferase.de", "artists-basspistol.luziferase.de" oder "artists.luziferase.de"
-    
-    // Fallback-Standardwerte definieren
+    const host = (req.headers.host || '').split(':')[0].toLowerCase();
+
     req.currentStation = null;
     res.locals.currentStation = null;
 
-    // 2. Prüfen, ob wir uns auf einer Subdomain befinden (Wir ignorieren die nackte Hauptdomain)
-    if (host !== 'artists.luziferase.de' && host.includes('.luziferase.de')) {
-        
-        // REPARIERT: Holt den exakten ersten Teil der Subdomain (z.B. "bass" aus "bass.luziferase.de")
+    // 2. Subdomain-Mandant
+    if (
+        host !== 'artists.luziferase.de' &&
+        host !== 'azuracast.luziferase.de' &&
+        host.includes('.luziferase.de')
+    ) {
         let subdomain = host.split('.')[0].toLowerCase();
-        
-        // Falls der Hoster "artists-bass" liefert, schneiden wir es sauber ab
+
         if (subdomain.startsWith('artists-')) {
-            subdomain = subdomain.replace('artists-', '');
-        }
-        
-        // Schneidet das alte "artists-" Präfix ab, falls es im Hostname enthalten ist
-        if (subdomain.startsWith('artists-')) {
-            subdomain = subdomain.replace('artists-', '');
+            subdomain = subdomain.slice('artists-'.length);
         }
 
         console.log(`[Mandant] Subdomain erkannt: "${subdomain}" für Host: ${host}`);
 
         try {
-            // Sucht den passenden Sender in der SQLite-Datenbank
             const station = db.prepare('SELECT * FROM stations WHERE url_stub = ?').get(subdomain);
-            
+
             if (station) {
                 req.currentStation = station;
-                res.locals.currentStation = station; // Macht die Stationsdaten in JEDEM EJS-Template verfügbar!
+                res.locals.currentStation = station;
                 process.env.SITE_URL = `https://${host}`;
             } else {
                 console.log(`[Mandant-Warnung] Kein Datenbank-Eintrag für url_stub: "${subdomain}"`);
-                // Falls du als Admin eingeloggt bist, blockieren wir dich nicht mit einem 404
-                if (!req.path.startsWith('/admin')) {
+                if (!req.path.startsWith('/admin') && !req.path.startsWith('/public/station-message')) {
                     return res.status(404).send("Dieses Sender-Portal existiert nicht im System.");
                 }
             }
@@ -105,6 +120,7 @@ app.use((req, res, next) => {
 //app.use('/', artistRoutes);
 //app.use('/', adminRoutes);
 
+app.use(publicRoutes);
 app.use('/artist', artistRoutes); 
 app.use('/', adminRoutes);
 

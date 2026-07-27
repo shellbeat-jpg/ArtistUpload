@@ -55,8 +55,31 @@
             </div>
 
             <form method="POST" action="/admin/tracks/<%= track.id %>/approve-and-sync" style="margin-top:10px;">
+               
+                <label>Playlist (stationsbezogen)</label>
+                <%
+                    const stationPlaylists =
+                        (typeof playlistsByStation !== 'undefined' && playlistsByStation && track.station_id)
+                            ? (playlistsByStation[String(track.station_id)] || [])
+                            : [];
+                %>
+                <select name="playlist_ids" required>
+                    <option value="">Bitte Playlist wählen…</option>
+                    <% stationPlaylists.forEach(function(pl) { %>
+                        <option value="<%= pl.id %>"><%= pl.name %> (ID: <%= pl.id %>)</option>
+            
+            
+                    <% }); %>
+                </select>
+                <% if (!stationPlaylists.length) { %>
+                    <p class="hint" style="margin-top:6px;">Keine Playlist für diese Station verfügbar.</p>
+                <% } %>
+                <!-- 
                 <label>Playlist-IDs (kommasepariert, aus AzuraCast)</label>
                 <input type="text" name="playlist_ids" placeholder="z.B. 3 oder 3,5">
+                 -->
+
+                
                 <div class="track-actions">
                     <button type="submit" class="btn-small">Freigeben &amp; synchronisieren</button>
                 </div>

@@ -12,6 +12,22 @@ const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docke
 
 const router = express.Router();
 
+
+// Hilfsfunktion: Playlists einer Station laden (normalisiert auf [{id,name}])
+async function loadStationPlaylists(stationStub) {
+    if (!stationStub) return [];
+    try {
+        const list = await azuracast.getPlaylists(stationStub);
+        return (Array.isArray(list) ? list : []).map((p) => ({
+            id: String(p.id),
+            name: p.name || `Playlist ${p.id}`
+        }));
+    } catch (e) {
+        console.error(`[Playlist-Load] Station "${stationStub}" fehlgeschlagen:`, e.message);
+        return [];
+    }
+}
+
 // --- Login / Logout ---
 
 // Unterstützt nun direkten Link-Klick (GET) und Formular-Senden (POST)
@@ -191,11 +207,29 @@ router.get('/admin', requireAdmin, async (req, res) => {
         `).all(adminStationId);
         const allTracks = db.prepare('SELECT * FROM tracks WHERE station_id = ? ORDER BY uploaded_at DESC').all(adminStationId);
 
+        // Stationsbezogene Playlist-Optionen für die Pending-Station(en) laden
+        const stationRows = db.prepare(`
+            SELECT id, url_stub
+            FROM stations
+            WHERE id IN (
+                SELECT DISTINCT station_id
+                FROM tracks
+                WHERE status = 'eingereicht' AND station_id = ?
+            )
+        `).all(adminStationId);
+
+        const playlistsByStation = {};
+        for (const st of stationRows) {
+            playlistsByStation[String(st.id)] = await loadStationPlaylists(st.url_stub);
+        }
+
+
         // Template rendern und alle Variablen sauber übergeben
         return res.render('admin/overview', { 
             artists: artists,
             tracks: allTracks, 
             pendingTracks: pendingTracks,
+            playlistsByStation: playlistsByStation,
             error: req.query.err || null, 
             message: req.query.msg || null,
             currentStation: null // Sicherheitsnetz für das Login-Layout
@@ -289,15 +323,13 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
     
 
     console.log(`[DEBUG-SYNC] Track ID: get(req.params.id)`);
-    
-    const playlistIds = (req.body.playlist_ids || '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .map(Number);
+
+    const selectedPlaylistId = String(req.body.playlist_ids || '').trim();
+    const playlistIds = selectedPlaylistId ? [Number(selectedPlaylistId)] : [];
 
     // 1. DYNAMISCHE SENDER- UND PFADERMITTLUNG
-    const stationDb = db.prepare('SELECT azuracast_station_id, url_stub FROM stations WHERE id = ?').get(track.station_id);
+    const stationDb = db.prepare('SELECT azuracast_station_id, url_stub, sftp_user FROM stations WHERE id = ?').get(track.station_id);
+    const stationSftpUser = stationDb?.sftp_user || null;
     const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
     const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
     // Die Basis des Senders: /var/lib/.../_data/SENDERORDNER/media
@@ -326,16 +358,18 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
         let result;
         if (track.azuracast_media_id) {
             console.log(`[DEBUG-UPLOAD] Modus: Ersetzen von ID ${track.azuracast_media_id}`);
-            result = await azuracast.replaceFile(
+            const replacedId = await azuracast.replaceFile(
                 stationStub,
                 track.azuracast_media_id,
                 localPath,
                 targetFilename,
-                playlistIds
+                playlistIds,
+                stationSftpUser
             );
+            result = { id: replacedId }; // normalisieren
         } else {
             console.log(`[DEBUG-UPLOAD] Modus: Erst-Upload`);
-            result = await azuracast.uploadFile(stationStub, localPath, targetFilename);
+            result = await azuracast.uploadFile(stationStub, localPath, targetFilename, stationSftpUser);
         }
 
         // MASSIVE INSPEKTION DER API-ANTWORT

@@ -197,6 +197,15 @@ router.post('/register', async (req, res) => {
         return renderError(e.message);
     }
 
+    if (!req.currentStation || !req.currentStation.id) {
+        console.error("[REGISTER] req.currentStation fehlt", {
+            host: req.headers.host,
+            hostname: req.hostname
+        });
+        return renderError("Station context missing");
+    }
+
+
     // 5. Passwort hashen & Token generieren
     const salt = bcrypt.genSaltSync(10);
     const passwordHash = bcrypt.hashSync(password, salt);
@@ -249,15 +258,26 @@ router.post('/register', async (req, res) => {
         });
 
     } catch (dbError) {
-        console.error("DB-Insert Error during registration:", dbError.message);
+        console.error("[REGISTER][DB-INSERT-ERROR]", {
+          message: dbError.message,
+          code: dbError.code || null,
+          errno: dbError.errno || null,
+          stack: dbError.stack
+        });
         return res.render('artist/register', { 
             turnstileSiteKey: process.env.TURNSTILE_SITE_KEY, 
             linkPlatforms: ALL_LINK_PLATFORMS,
-            error: "Database Error"//,
+            error: `Database Error: ${dbError.message}`,
+        formData: req.body
             // lng: req.language
         });
     }
 });
+
+
+
+
+
  
 
 // GET: Bestätigungs-Link validieren

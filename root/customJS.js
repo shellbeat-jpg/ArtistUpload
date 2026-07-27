@@ -95,6 +95,9 @@ function syncLyricsBackground() {
     }  
 }
 
+
+let lastTrackFingerprint = null;
+
 async function updateLyrics() {
     try {
         // Stations-Shortcode ermitteln: entweder aus dem Pfad (azuracast.luziferase.de/public/<station>)
@@ -103,95 +106,96 @@ async function updateLyrics() {
         const pathMatch = window.location.pathname.match(/\/public\/([^\/]+)/);
         const hostMatch = window.location.hostname.match(/^(?!azuracast\.|artists\.|stream\.|www\.)([^.]+)\.luziferase\.de$/i);
         const stationStub = pathMatch?.[1] || hostMatch?.[1] || 'luziferase';
-        // REPARIERT: Ermittelt den Stations-Shortcode dynamisch aus der Browser-URL
-        // const stationStub = window.location.pathname.split('/public/')[1]?.split('/')[0] || 'luziferase';
-        const response = await fetch(`/api/nowplaying/${stationStub}`);
+        const response = await fetch(`/api/nowplaying/${stationStub}`, { cache: 'no-store' });
         const data = await response.json();
+
+        const song = data.now_playing?.song || {};
+        const songId = song.id ?? song.text ?? null;
         
-        // REPARIERT: Optionale Verkettung (?.) fängt leere Felder oder Werbe-Jingles fehlerfrei ab
-        const lyrics = data.now_playing?.song?.lyrics;
-        const bio = data.now_playing?.song?.custom_fields?.bio;
-        const url_artist = data.now_playing?.song?.custom_fields?.url_artist;
-        const url_track = data.now_playing?.song?.custom_fields?.url_track;
-        const bpm = data.now_playing?.song?.custom_fields?.bpm;
-        const remaining = data.now_playing?.remaining || 15;
+        const songFingerprint = [
+          songId ?? '',
+          song?.artist ?? '',
+          song?.title ?? '',
+          song?.text ?? '',
+          data.now_playing?.duration ?? ''
+        ].join('||');
+        
+        // Initial-Render + Change-Detection robust
+        const isFirstRun = lastTrackFingerprint === null;
+        const changed = isFirstRun || (songFingerprint && songFingerprint !== lastTrackFingerprint);
+        
+        // WICHTIG: Werte außerhalb des changed-Blocks definieren (Scope-Fix)
+        const lyrics = song?.lyrics;
+        const bio = song?.custom_fields?.bio;
+        const url_artist = song?.custom_fields?.url_artist;
+        //const url_track = song?.custom_fields?.url_track;
+        const bpm = song?.custom_fields?.bpm;
+        // const remaining = data.now_playing?.remaining || 15;
 
-        let container_lyrics = document.getElementById('lyrics-container');
-        if (!container_lyrics) {
-            const player = document.getElementById('public-radio-player');
-            if (!player) {
-                setTimeout(updateLyrics, 2000);
-                return;
+        if (changed) {      
+            lastTrackFingerprint = songFingerprint;
+            
+            let container_lyrics = document.getElementById('lyrics-container');
+            if (!container_lyrics) {
+                const player = document.getElementById('public-radio-player');
+                if (!player) {
+                    setTimeout(updateLyrics, 2000);
+                    return;
+                }
+                const cardBody = player.querySelector('.card-body');
+                if (!cardBody) {
+                    setTimeout(updateLyrics, 2000);
+                    return;
+                }
+                container_lyrics = document.createElement('div');
+                container_lyrics.id = 'lyrics-container';
+                container_lyrics.className = 'lyrics-text';
+                cardBody.insertAdjacentElement('afterend', container_lyrics);
             }
-            const cardBody = player.querySelector('.card-body');
-            if (!cardBody) {
-                setTimeout(updateLyrics, 2000);
-                return;
+
+            // Songwechsel / Initial-Render
+            if (lyrics) {
+                container_lyrics.innerHTML = lyrics.replace(/\n/g, '<br>');
+            } else if (bio) {
+                container_lyrics.innerHTML = bio.replace(/\n/g, '<br>');
+            } else {
+                container_lyrics.innerHTML = "";
             }
-            container_lyrics = document.createElement('div');
-            container_lyrics.id = 'lyrics-container';
-            container_lyrics.className = 'lyrics-text'; 
-            cardBody.insertAdjacentElement('afterend', container_lyrics);
-        }
-      
-        // Songwechsel
-        if (lyrics) {
-            container_lyrics.innerHTML = lyrics.replace(/\n/g, '<br>');
-        } else if (bio) { 
-            container_lyrics.innerHTML = bio.replace(/\n/g, '<br>'); 
-        } else { 
-            container_lyrics.innerHTML = ""; 
-        }
-        if (typeof syncLyricsBackground === "function") syncLyricsBackground();
-      
-        let container_url_artist = document.getElementById('artist-links-container');
-        if (!container_url_artist) {
 
-        }
-       /*
-        let container_url_artist = document.getElementById('url_artist-container');
-        if (!container_url_artist) {
-            container_url_artist = document.createElement('div');
-            container_url_artist.id = 'url_artist-container'; 
-            container_url_artist.className = 'card-body url_artist'; 
-            const player = document.getElementById('public-radio-player');
-            const cardBody = player?.querySelector('.card-body');
-            if (cardBody) cardBody.insertAdjacentElement('afterend', container_url_artist);
-        }
-      
-        // REPARIERT: Setzt den Container-Inhalt standardmäßig zurück
-        if (container_url_artist) container_url_artist.innerHTML = "";
+            if (typeof syncLyricsBackground === "function") syncLyricsBackground();
 
-        if (url_track && container_url_artist) {
-            container_url_artist.innerHTML = '<a class="btn_artist" href="'+url_track+'" target="_blank" rel="noopener noreferrer">' +url_track+'</a>';
+            let container_url_artist = document.getElementById('artist-links-container');
+            // bewusst unverändert belassen (wie in deinem Code)
+
+            if (data.now_playing?.song?.custom_fields && typeof updateArtistLinks === "function") {
+                updateArtistLinks(data.now_playing.song.custom_fields);
+            }
+        } else {
+            // optional trotzdem leichte Updates (z.B. remaining/bpm phase)
+            if (bpm) updateBpmSync(data);
         }
-         */ 
-        if (bpm) {           
+
+        // BPM-Anzeige unabhängig vom Trackwechsel aktuell halten
+        if (bpm) {
             const streamSelect = document.querySelector('.radio-control-select-stream');
-            console.log('BPM:', bpm);
             if (streamSelect){
-              streamSelect.innerHTML = bpm + ' BPM';
-              //streamSelect.classList.add('player-visual');
-              document.querySelector('.card-title.mb-3').classList.add('player-visual');   
-              updateBpmSync(data); 
-            } 
+                streamSelect.innerHTML = bpm + ' BPM';
+                document.querySelector('.card-title.mb-3')?.classList.add('player-visual');
+                updateBpmSync(data);
+            }
         }
 
-        if (data.now_playing?.song?.custom_fields && typeof updateArtistLinks === "function") {
-            updateArtistLinks(data.now_playing.song.custom_fields);
-        }
-
-        const nextCheckIn = Math.min(Math.max((remaining + 2) * 1000, 5000), 30000);
-        setTimeout(updateLyrics, nextCheckIn);
+        // statt remaining-basiert: konstantes kurzes Intervall
+        setTimeout(updateLyrics, 2500);
     } catch (error) {
         console.error('Fehler beim Laden der API:', error);
-        setTimeout(updateLyrics, 15000);
+        setTimeout(updateLyrics, 5000);
     }
 }
 
 window.addEventListener('load', () => {
     updateLyrics();
-   // updateBpmSync(data);  
+    // updateBpmSync(data);
 });
 
 function initPlayButtonColor() {
@@ -238,7 +242,7 @@ function updateBpmSync(nowPlayingData) {
   const trackId = song?.id ?? song?.text; // Fallback falls keine ID vorhanden
 
   // Beat-Dauer in Sekunden berechnen und als CSS Custom Property setzen
-  const beatDuration = 60 / bpm;
+  const beatDuration = 60 / bpm * 4;
   playerVisual.style.setProperty('--beat-duration', `${beatDuration}s`);
   playerVisual.style.animationPlayState = 'running';
 
@@ -255,13 +259,48 @@ function updateBpmSync(nowPlayingData) {
   }
 }
 
-function initHelpOverlay() {
+(function () {
+  function detectStationStub() {
+    const pathMatch = window.location.pathname.match(/\/public\/([^\/]+)/i);
+    const hostMatch = window.location.hostname.match(
+      /^(?!azuracast\.|artists\.|stream\.|www\.)([^.]+)\.luziferase\.de$/i
+    );
+    return (pathMatch?.[1] || hostMatch?.[1] || 'luziferase').toLowerCase();
+  }
+
+  // Liefert NUR den Content (String) zurück
+  async function fetchStationMessage() {
+    const station = detectStationStub();
+        console.log('station: ', station);
+    if (!station) return '';
+ 
+    const API_BASE = 'https://azuracast.luziferase.de'; // z. B. https://upload.luziferase.de
+    const url = `${API_BASE}/public/station-message?station=${encodeURIComponent(station)}`;
+    //const url = `${window.location.origin}/public/station-message?station=${encodeURIComponent(station)}`; 
+    // const url = `${window.location.origin}/artist-api/public/station-message?station=${encodeURIComponent(station)}`;
+    console.log('url: ', url);
+    
+    try {
+      const res = await fetch(url, { method: 'GET', credentials: 'omit' });
+      if (!res.ok) return '';
+      const data = await res.json();
+      return (data?.message || '').trim();
+    } catch (err) {
+      console.warn('[station-message] fetch failed:', err.message);
+      return '';
+    }
+  }
+
+  // Beispiel: deine bestehende Render-Funktion kann das nutzen
+  async function initHelpOverlay() {
     const card = document.querySelector('.card');
     if (!card) {
         setTimeout(initHelpOverlay, 500);
         return;
     }
-
+    const station_content = await fetchStationMessage();
+    if (!station_content) return;
+    
     // Icon erzeugen
     const icon = document.createElement('div');
     icon.className = 'card-help-icon';
@@ -273,14 +312,7 @@ function initHelpOverlay() {
     // Overlay erzeugen
     const overlay = document.createElement('div');
     overlay.className = 'card-help-overlay';
-    overlay.innerHTML = `
-        <button class="close-btn" aria-label="Schließen">&times;</button>
-<h5>Über 030 Your local Basstation</h5>
-<p>24/7-Radio aus der Berliner Bass-Music-Szene: 15 Minuten Sendezeit pro Producer, selbst kuratiert, direkt verlinkt zu Bandcamp, SoundCloud & Co.</p>
-<p>24/7 radio from Berlin's bass music scene: 15 minutes of airtime per artist, self-curated, linking straight to Bandcamp, SoundCloud & more.</p>
-<p><a class="footer-link" href="/artist/register" target='_blank' style="text-decoration: none; display: inline-block;">Registrierung ?</a></p>
-<p><a class="footer-link" href="/artist/login" target='_blank' style="text-decoration: none; display: inline-block;">Login ?</a></p>
-    `;
+    overlay.innerHTML = `<button class="close-btn" aria-label="Schließen">&times;</button>` + station_content;
     card.appendChild(overlay);
 
     // Toggle-Logik
@@ -290,6 +322,15 @@ function initHelpOverlay() {
     overlay.querySelector('.close-btn').addEventListener('click', () => {
         overlay.classList.remove('open');
     });
-}
+  }
 
-window.addEventListener('load', initHelpOverlay);
+  if (document.readyState === 'loading') {
+    console.log('initHelpOverlay...');
+    window.addEventListener('DOMContentLoaded', initHelpOverlay);
+  } else {
+    initHelpOverlay();
+  }
+
+  // Optional global verfügbar machen, falls andere Funktionen extern darauf zugreifen:
+  // window.fetchStationMessage = fetchStationMessage;
+})();

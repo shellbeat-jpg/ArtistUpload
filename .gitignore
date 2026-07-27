@@ -23,5 +23,6 @@ public/adminer-plugins.php
 public/adminer-plugins/
 public/adminer.php
 public/css/
+root/_customJS.js
 
 
