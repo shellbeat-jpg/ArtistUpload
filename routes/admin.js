@@ -140,13 +140,21 @@ router.get('/admin', requireAdmin, async (req, res) => {
                     // Der exakte, dynamische Medien-Pfad für diese spezifische Station
                     const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
 
-                    // API-Abfrage an AzuraCast senden
-                    const response = await fetch(`${process.env.AZURACAST_BASE_URL}/api/station/${stationStub}/media/${track.azuracast_media_id}`, {
-                        headers: { 'Authorization': `Bearer ${process.env.AZURACAST_API_KEY}` }
-                    });
-                    
-                    if (response.ok) {
-                        const azuraTrack = await response.json();
+                    // Nutzt lib/azuracast.js (korrekter X-API-Key-Header + /file/-Endpunkt --
+                    // vorher lief hier ein abweichender Bearer-Header gegen /media/ ins Leere)
+                    const azuraTrack = await azuracast.getMedia(stationStub, track.azuracast_media_id);
+
+                    if (azuraTrack === null) {
+                        // Track wurde direkt in AzuraCast entfernt (z.B. manuell im Admin-UI) --
+                        // lokal nachziehen, damit Admin- und Artist-Ansicht nicht faelschlich
+                        // weiter "freigegeben" zeigen.
+                        db.prepare(`
+                            UPDATE tracks
+                            SET azuracast_media_id = NULL, status = 'eingereicht', updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        `).run(track.id);
+                        console.log(`[Auto-Sort] Track "${track.title}" war in AzuraCast nicht mehr auffindbar -- lokal zurueckgesetzt.`);
+                    } else {
                         const hasPlaylists = azuraTrack.playlists && azuraTrack.playlists.length > 0;
                         
                         // Aktuellen Ordner aus dem gespeicherten Filepath extrahieren (z.B. "mapped-to-playlist")
@@ -334,12 +342,16 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
     const stationStub = stationDb ? stationDb.url_stub : 'default';
     // Holt den Pfad der externen HDD aus der .env für den Zugriff auf die Quelldatei
     const externalTempDir = process.env.AZURACAST_MEDIA_TEMP_PATH || path.join(globalDockerDir, 'new');
-    // KORREKTUR: Ermittelt den exakten Pfad der Datei auf der externen Festplatte
-    // Da track.filepath "new/dateiname.ext" enthält, extrahieren wir nur den reinen Filename,
-    // da alle Uploads direkt flach im Temp-Ordner der HDD liegen.
-    const localPath = path.join(externalTempDir, track.filename);
-    // Findet die temporäre Quell-Datei fehlerfrei im /new-Ordner dieses Senders (z.B. new/hash.wav)
-    // const localPath = path.join(baseMediaDir, track.filepath);
+    // KORREKTUR: Zwei unterschiedliche Wahrheiten je nachdem, ob der Track schon mal
+    // synchronisiert war -- track.azuracast_media_id ist dafuer das verlaessliche Signal:
+    // - Noch NIE synchronisiert (Erst-Upload): Datei liegt flach im gemeinsamen,
+    //   stationsunabhaengigen Temp-Ordner der externen HDD (lib/upload.js -> multer).
+    // - Bereits synchronisiert und seither vom Artist per "Ersetzen" bearbeitet: die
+    //   neue Datei wurde von routes/artist.js schon stationsspezifisch nach
+    //   baseMediaDir/new/ verschoben, track.filepath ("new/<datei>") ist relativ dazu.
+    const localPath = track.azuracast_media_id
+        ? path.join(baseMediaDir, track.filepath)
+        : path.join(externalTempDir, track.filename);
              
     const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(track.artist_id);
     
@@ -521,7 +533,11 @@ router.post('/admin/tracks/:id/remove-from-azuracast', requireAdmin, async (req,
         return res.redirect('/admin?err=Kein synchronisierter Track gefunden.');
     }
     try {
-        await azuracast.deleteFile(track.azuracast_media_id);
+        // KORREKTUR: deleteFile erwartet (stationStub, mediaId) -- vorher fehlte
+        // stationStub komplett, wodurch die Loeschung gegen eine falsche URL lief.
+        const stationDb = db.prepare('SELECT url_stub FROM stations WHERE id = ?').get(track.station_id);
+        const stationStub = stationDb ? stationDb.url_stub : 'default';
+        await azuracast.deleteFile(stationStub, track.azuracast_media_id);
         db.prepare('UPDATE tracks SET azuracast_media_id = NULL WHERE id = ?').run(track.id);
         res.redirect('/admin?msg=Aus AzuraCast entfernt.');
     } catch (e) {
@@ -543,9 +559,17 @@ router.get('/admin/tracks/:id/stream/:filename', (req, res) => {
     
     let absoluteFilePath = null;
 
-    // KORREKTUR: Wenn der Track noch im Zustand 'eingereicht' ist, holen wir ihn von der HDD!
-    if (track.status === 'eingereicht') {
+    // KORREKTUR: 'eingereicht' heisst nicht mehr zwingend "liegt noch im flachen Temp-
+    // Ordner" -- ein bereits synchronisierter, seither per "Ersetzen" bearbeiteter Track
+    // faellt ebenfalls auf 'eingereicht' zurueck, liegt dann aber schon stationsspezifisch
+    // in baseMediaDir/new/ (siehe gleiche Unterscheidung wie bei approve-and-sync).
+    if (track.status === 'eingereicht' && !track.azuracast_media_id) {
         absoluteFilePath = path.join(externalTempDir, req.params.filename);
+    } else if (track.status === 'eingereicht' && track.azuracast_media_id) {
+        const newPath = path.join(baseMediaDir, 'new', req.params.filename);
+        if (fs.existsSync(newPath)) {
+            absoluteFilePath = newPath;
+        }
     } else {
         // Für alle bereits freigegebenen/sortierten Tracks durchsuchen wir das Docker-Volume
         const possibleFolders = ['mapped-to-playlist', 'incoming', 'archive'];

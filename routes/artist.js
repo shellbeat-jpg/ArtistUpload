@@ -10,6 +10,7 @@ const { requireArtist } = require('../lib/auth');
 const { upload, validateImageSize } = require('../lib/upload');
 const azuracast = require('../lib/azuracast');
 const { detectBpm } = require('../lib/bpm');
+const { reconcileDeletedTracks } = require('../lib/sync');
 const {
     ALL_LINK_PLATFORMS,
     getArtistLinksMap,
@@ -302,9 +303,13 @@ router.get('/verify/:token', (req, res) => {
 
 // --- Dashboard ---
 
-router.get('/dashboard', requireArtist, (req, res) => {
+router.get('/dashboard', requireArtist, async (req, res) => {
     const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(req.session.artistId);
     const tracks = db.prepare('SELECT * FROM tracks WHERE artist_id = ? ORDER BY uploaded_at DESC').all(artist.id);
+
+    // Loeschungs-Sync AzuraCast -> Portal: bevor gerendert wird, pruefen, ob einer
+    // dieser Tracks zwischenzeitlich direkt in AzuraCast entfernt wurde.
+    await reconcileDeletedTracks(tracks);
 
     const usedMb = tracks.reduce((sum, t) => sum + t.filesize_mb, 0);
 
@@ -959,7 +964,7 @@ router.post('/tracks/:id/replace', requireArtist, (req, res) => {
 
 // --- Eigenen Track loeschen ---
 
-router.post('/tracks/:id/delete', requireArtist, (req, res) => {
+router.post('/tracks/:id/delete', requireArtist, async (req, res) => {
     const track = db
         .prepare('SELECT * FROM tracks WHERE id = ? AND artist_id = ?')
         .get(req.params.id, req.session.artistId);
@@ -983,8 +988,21 @@ router.post('/tracks/:id/delete', requireArtist, (req, res) => {
         if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
     }
 
-    // Hinweis: War der Track schon in AzuraCast (azuracast_media_id gesetzt), bleibt er
-    // dort bewusst bestehen, bis ein Admin ihn aktiv entfernt (routes/admin.js).
+    // KORREKTUR: War der Track schon in AzuraCast synchronisiert, wird er jetzt auch dort
+    // entfernt, statt (wie bisher) nur lokal geloescht zu werden und in AzuraCast als
+    // Karteileiche zu verbleiben. deleteFile behandelt ein bereits fehlendes Media (404)
+    // als Erfolg, ein Fehlschlag hier blockiert die lokale Loeschung trotzdem nicht --
+    // notfalls kann ein Admin ueber /admin/tracks/:id/remove-from-azuracast nachziehen.
+    if (track.azuracast_media_id) {
+        try {
+            const stationDb = db.prepare('SELECT url_stub FROM stations WHERE id = ?').get(track.station_id);
+            const stationStub = stationDb ? stationDb.url_stub : 'default';
+            await azuracast.deleteFile(stationStub, track.azuracast_media_id);
+        } catch (e) {
+            console.error(`AzuraCast-Loeschung fuer Track ${track.id} fehlgeschlagen:`, e.message);
+        }
+    }
+
     db.prepare('DELETE FROM tracks WHERE id = ?').run(track.id);
 
     res.redirect(`/artist/dashboard?msg=${encodeURIComponent(req.t('messages.trackDeleted'))}`);
