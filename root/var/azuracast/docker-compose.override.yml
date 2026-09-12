@@ -1,10 +1,13 @@
-version: '2.2'
-
+cat > /var/azuracast/docker-compose.override.yml <<'YAML'
 services:
-  web:
-    volumes:
-      - /var/azuracast/nginx_custom/upload_limit.conf:/etc/nginx/azuracast.conf.d/upload_limit.conf:ro
-      - /var/azuracast/nginx_custom/php_upload.ini:/usr/local/etc/php/conf.d/upload_limit.ini:ro
+  mariadb:
+    command:
+      - mysqld
+      - --innodb-buffer-pool-size=256M
+      - --innodb-log-buffer-size=16M
+      - --max-connections=40
+      - --table-open-cache=256
+YAML
 
 
       

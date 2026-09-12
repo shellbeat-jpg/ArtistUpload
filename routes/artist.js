@@ -28,7 +28,7 @@ require('dotenv').config();
 // const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
 // Ermittelt das globale Docker-Mutterverzeichnis aus der .env
 //const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || path.join(__dirname, '..', 'uploads');
-const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docker/volumes/azuracast_station_data/_data';
+const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH;
 
 // Baut den Pfad vollautomatisch stationsspezifisch zusammen!
 // Ergebnis für Basspistol: /.../_data/luziferase/media
@@ -454,13 +454,39 @@ router.get('/tracks/:id/stream/:filename', (req, res) => {
 
     if (!track) return res.status(404).send('Track nicht gefunden.');
 
-    const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docker/volumes/azuracast_station_data/_data';
     const stationDb = db.prepare('SELECT azuracast_station_id FROM stations WHERE id = ?').get(track.station_id);
-    const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
-    const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
-
-    const possibleFolders = ['mapped-to-playlist', 'incoming', 'new'];
+    const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase'; 
+    const baseMediaDir = process.env.AZURACAST_MEDIA_BASE_PATH;
+    const externalTempDir = process.env.AZURACAST_MEDIA_TEMP_PATH || path.join(__dirname, '..', 'uploads');
     let absoluteFilePath = null;
+    
+    // KORREKTUR: Unterscheidung anhand des Track-Status
+    if (track.status === 'eingereicht') {
+        // Noch nicht freigegebene Tracks liegen flach auf der HDD im Temp-Sammelordner
+        absoluteFilePath = path.join(externalTempDir, req.params.filename);
+    } else {
+        // Freigegebene Tracks liegen im ausgelagerten Docker-Volume des jeweiligen Senders
+        const stationDb = db.prepare('SELECT azuracast_station_id FROM stations WHERE id = ?').get(track.station_id);
+        const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
+        const stationMediaDir = path.join(baseMediaDir, stationFolder, 'media');
+
+        const possibleFolders = ['mapped-to-playlist', 'incoming', 'archive'];
+        for (const folder of possibleFolders) {
+            const testPath = path.join(stationMediaDir, folder, req.params.filename);
+            if (fs.existsSync(testPath)) {
+                absoluteFilePath = testPath;
+                break;
+            }
+        }
+
+        // Letzter Fallback über den relativen Datenbank-Pfad
+        if (!absoluteFilePath) {
+            absoluteFilePath = path.join(stationMediaDir, track.filepath);
+        }
+    }
+        
+    /*
+    const possibleFolders = ['mapped-to-playlist', 'incoming', 'new'];
 
     for (const folder of possibleFolders) {
         const testPath = path.join(baseMediaDir, folder, req.params.filename);
@@ -469,6 +495,7 @@ router.get('/tracks/:id/stream/:filename', (req, res) => {
             break;
         }
     }
+    */
 
     if (!absoluteFilePath) {
         absoluteFilePath = path.join(baseMediaDir, track.filepath);
@@ -648,13 +675,17 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
         
         // --- REPARIERT: Holt den echten Ordnernamen der aktuell aufgerufenen Subdomain ---
         // ID 1 -> 'luziferase', ID 3 -> 'bass'
-        const stationFolder = req.currentStation ? req.currentStation.azuracast_station_id : 'luziferase';
-        
+        const stationFolder = req.currentStation ? req.currentStation.azuracast_station_id : 'luziferase'; 
         // Holt die globale Docker-Basis aus der .env (endet auf /_data)
-        const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docker/volumes/azuracast_station_data/_data';
+        const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH; 
+        //const externalTempDir = process.env.AZURACAST_MEDIA_TEMP_PATH || path.join(__dirname, '..', 'uploads');
+        //const targetAudioDir = externalTempDir;
+        
+        const externalTempDir = process.env.AZURACAST_MEDIA_TEMP_PATH || path.join(globalDockerDir, 'new');
+        const targetAudioDir = externalTempDir;
         
         // Bestimmt den exakten, stationsspezifischen Zielordner für neue Tracks
-        const targetAudioDir = path.join(globalDockerDir, stationFolder, 'media', 'new');
+        // const targetAudioDir = path.join(globalDockerDir, stationFolder, 'media', 'new'); 
         
         // Ordner automatisch anlegen, falls er für diese Station noch nicht existiert
         if (!fs.existsSync(targetAudioDir)) {
@@ -663,20 +694,22 @@ router.post('/tracks/upload', requireArtist, (req, res) => {
         }
 
         // Der physische Zielpfad auf der Hetzner-Festplatte
-        const finalDestinationPath = path.join(targetAudioDir, trackFile.filename);
-
+        const finalDestinationPath = path.join(targetAudioDir, trackFile.filename);       
+    
+        // KORREKTUR: Verschiebt die Datei aus dem externen Mount-Temp-Verzeichnis (/mnt/.../temp)
+        
         // Verschiebt die Datei aus dem globalen Sammelordner (/_data/new/) 
         // punktgenau in den /new-Ordner der jeweiligen Station (z.B. /_data/bass/media/new/)
         if (fs.existsSync(trackFile.path)) {
-            fs.renameSync(trackFile.path, finalDestinationPath);
-            fs.chmodSync(finalDestinationPath, 0o666); // Datei für den Docker-Container lesbar machen
+            fs.renameSync(trackFile.path, finalDestinationPath);  
+            fs.chmodSync(finalDestinationPath, 0o775); // Datei für den Docker-Container lesbar machen           
         }
-
+ 
         // --- DATENBANK UPDATE: Relativen Pfad passend zum neuen Ziel abspeichern ---
         // Speichert 'new/dateiname.ext' -> Deine Streaming-Route weiß später über baseMediaDir, 
         // wo sie suchen muss!
         const relativeDbPath = `new/${trackFile.filename}`;
-        
+ 
         // ====================================================================
         // --- ENDE DER NEUEN PRÜFUNG (Es folgt dein INSERT INTO tracks) ---
         // ====================================================================

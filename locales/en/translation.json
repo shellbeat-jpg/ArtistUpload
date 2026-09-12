@@ -88,7 +88,7 @@
     "quotaExceededUpload": "Quota exceeded. Still available: {{remaining}} MB.",
     "quotaExceededExchange": "Quota exceeded. Available for this replacement: {{remaining}} MB.",
     "trackNotFound": "Track not found.",
-    "trackUploaded": "Track uploaded and submitted for review.",
+    "trackUploaded": "Track uploaded and submitted for review.  Watch your email inbox!",
     "trackUpdatedSynced": "Track updated and synced with AzuraCast.",
     "trackUpdated": "Track updated.",
     "syncFailedNote": " Note: automatic AzuraCast sync failed, please check the admin area.",

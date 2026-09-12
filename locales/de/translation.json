@@ -89,7 +89,7 @@
     "quotaExceededUpload": "Kontingent ueberschritten. Noch verfuegbar: {{remaining}} MB.",
     "quotaExceededExchange": "Kontingent ueberschritten. Fuer diesen Austausch verfuegbar: {{remaining}} MB.",
     "trackNotFound": "Track nicht gefunden.",
-    "trackUploaded": "Track hochgeladen und zur Pruefung eingereicht.",
+    "trackUploaded": "Track hochgeladen und zur Pruefung eingereicht. Watch your email inbox!",
     "trackUpdatedSynced": "Track aktualisiert und mit AzuraCast synchronisiert.",
     "trackUpdated": "Track aktualisiert.",
     "syncFailedNote": " Hinweis: automatischer AzuraCast-Sync ist fehlgeschlagen, bitte im Admin-Bereich pruefen.",

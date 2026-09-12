@@ -7,9 +7,7 @@ const db = require('../db/connection');
 const { requireAdmin } = require('../lib/auth');
 const azuracast = require('../lib/azuracast');
 const { getArtistLinksMap } = require('../lib/artist-links');
-
 const globalDockerDir = process.env.AZURACAST_MEDIA_BASE_PATH || '/var/lib/docker/volumes/azuracast_station_data/_data'; 
-
 const router = express.Router();
 
 
@@ -333,12 +331,16 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
     const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
     const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
     // Die Basis des Senders: /var/lib/.../_data/SENDERORDNER/media
-   
     const stationStub = stationDb ? stationDb.url_stub : 'default';
-    
+    // Holt den Pfad der externen HDD aus der .env für den Zugriff auf die Quelldatei
+    const externalTempDir = process.env.AZURACAST_MEDIA_TEMP_PATH || path.join(globalDockerDir, 'new');
+    // KORREKTUR: Ermittelt den exakten Pfad der Datei auf der externen Festplatte
+    // Da track.filepath "new/dateiname.ext" enthält, extrahieren wir nur den reinen Filename,
+    // da alle Uploads direkt flach im Temp-Ordner der HDD liegen.
+    const localPath = path.join(externalTempDir, track.filename);
     // Findet die temporäre Quell-Datei fehlerfrei im /new-Ordner dieses Senders (z.B. new/hash.wav)
-    const localPath = path.join(baseMediaDir, track.filepath);
- 
+    // const localPath = path.join(baseMediaDir, track.filepath);
+             
     const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(track.artist_id);
     
     console.log(`[DEBUG-SYNC] Artist ID: get(track.artist_id)`);
@@ -401,7 +403,6 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
 
         console.log(`[DEBUG-METADATA] Sende Metadaten-Update an Station "${stationStub}" für ID: ${newMediaId}`);
 
-
         // REPARIERT: stationStub als 1. Parameter übergeben, um die Metadaten im richtigen Sender zu sichern!
         await azuracast.setMetadata(stationStub, newMediaId, {
             title: track.title,
@@ -425,8 +426,6 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
         }
 
         // --- 3. REDUNDANZ-ELIMINIERUNG (Temporäre Datei löschen) ---
-        // Da AzuraCast die Datei nun erfolgreich verarbeitet hat, fegen wir 
-        // die Quell-Datei aus dem /new-Unterordner des Senders von der Platte.
         if (fs.existsSync(localPath)) {
             fs.unlinkSync(localPath);
         }
@@ -445,9 +444,71 @@ router.post('/admin/tracks/:id/approve-and-sync', requireAdmin, async (req, res)
             WHERE id = ?
         `).run(finalRelativeDbPath, String(newMediaId), playlistIds.join(','), track.id);
 
+
+        // Bestätigungs-E-Mail an Artist
+        try {
+            if (artist && artist.email) {
+            
+                req.session.flashMessage = req.session.flashMessage  ? `${req.session.flashMessage} artist.email` : artist.email + ' ' ;
+            
+                // --- NEU: Registrierung (Self-Signup) ---  
+                const nodemailer = require('nodemailer');
+
+                // Werte strikt von eventuellen Leerzeichen oder unsichtbaren Zeichen befreien
+                const cleanSmtpHost = (process.env.SMTP_HOST || '://brevo.com').trim();
+                const cleanSmtpUser = (process.env.SMTP_USER || '').trim();
+                const cleanSmtpPass = (process.env.SMTP_PASS || '').trim();
+
+                // SMTP-Transporter für die Verifikations-Mails initialisieren
+                const transporter = nodemailer.createTransport({
+                    host: cleanSmtpHost,
+                    port: parseInt(process.env.SMTP_PORT || '587', 10),
+                    secure: process.env.SMTP_PORT === '465', // false für Port 587 (STARTTLS)
+                    auth: {
+                        user: cleanSmtpUser,
+                        pass: cleanSmtpPass,
+                        logger: true,
+                        debug: true
+                    }
+                });
+                
+                const stationName = stationDb?.name || req.currentStation?.name || 'Radio';
+                const artistDisplayName = artist.name || '';
+
+                const mailOptions = {
+                    from: req.currentStation?.email_from || process.env.SMTP_FROM || 'post@luziferase.de',
+                    to: artist.email,
+                    subject: `[${stationName}] Track approved: ${track.title}`,
+                    text: `Hi ${artistDisplayName},
+
+your Track "${track.title}" is approved and will be synced with the running broadcast now:
+https://modular.luziferase.de
+
+Cheers,
+${stationName}
+https://modular.luziferase.de`,
+                    html: `<p>Hi ${artistDisplayName},</p>
+<p>your Track  "<strong>${track.title}</strong>"  is approved and will be synced with the running broadcast now:<br /><a href="https://modular.luziferase.de">https://modular.luziferase.de</a></p>
+<p>Cheers,<br />${stationName}</p>`
+                };        
+
+                transporter.sendMail(mailOptions, (mailErr) => {
+                    if (mailErr) {
+                        console.error('Freigabe-Mail an Artist fehlgeschlagen:', mailErr.message);
+                        req.session.flashMessage = req.session.flashMessage  ? `${req.session.flashMessage} Freigabe-Mail an Artist fehlgeschlagen` : ' Freigabe-Mail an Artist fehlgeschlagen ' ;
+                    }
+                    req.session.flashMessage = req.session.flashMessage  ? `${req.session.flashMessage} Freigabe-Mail an Artist gesendet` : ' Freigabe-Mail an Artist gesendet ' ;
+                });  
+            }
+        } catch (mailOuterErr) {
+            console.error('Unerwarteter Fehler beim Erstellen/Versenden der Freigabe-Mail:', mailOuterErr.message);
+            req.session.flashMessage = req.session.flashMessage  ? `${req.session.flashMessage} Unerwarteter Fehler beim Versenden ` : ' Unerwarteter Fehler beim Versenden ' ;
+        }  
+
         res.redirect('/admin?msg=Track erfolgreich freigegeben, Metadaten und Cover synchronisiert.');
     } catch (e) {
         console.error("Schwerer Fehler bei Freigabe-Route:", e.message);
+        req.session.flashMessage = req.session.flashMessage  ? `${req.session.flashMessage} Schwerer Fehler bei Freigabe-Route ` : ' Schwerer Fehler bei Freigabe-Route ' ;
         res.redirect(`/admin?err=${encodeURIComponent('AzuraCast-Sync fehlgeschlagen: ' + e.message)}`);
     }
 });
@@ -478,6 +539,26 @@ router.get('/admin/tracks/:id/stream/:filename', (req, res) => {
     const stationFolder = stationDb ? stationDb.azuracast_station_id : 'luziferase';
     const baseMediaDir = path.join(globalDockerDir, stationFolder, 'media');
     
+    const externalTempDir = process.env.AZURACAST_MEDIA_TEMP_PATH || path.join(globalDockerDir, 'new');
+    
+    let absoluteFilePath = null;
+
+    // KORREKTUR: Wenn der Track noch im Zustand 'eingereicht' ist, holen wir ihn von der HDD!
+    if (track.status === 'eingereicht') {
+        absoluteFilePath = path.join(externalTempDir, req.params.filename);
+    } else {
+        // Für alle bereits freigegebenen/sortierten Tracks durchsuchen wir das Docker-Volume
+        const possibleFolders = ['mapped-to-playlist', 'incoming', 'archive'];
+        for (const folder of possibleFolders) {
+            const testPath = path.join(baseMediaDir, folder, req.params.filename);
+            if (fs.existsSync(testPath)) {
+                absoluteFilePath = testPath;
+                break; 
+            }
+        }
+    }
+    
+    /*
     const possibleFolders = ['mapped-to-playlist', 'incoming', 'archive', 'new'];
     let absoluteFilePath = null;
 
@@ -488,7 +569,8 @@ router.get('/admin/tracks/:id/stream/:filename', (req, res) => {
             break; 
         }
     }
-
+    */
+    
     if (!absoluteFilePath) {
         absoluteFilePath = path.join(baseMediaDir, track.filepath);
     }
@@ -616,7 +698,9 @@ router.get('/admin/debug-stations', requireAdmin, async (req, res) => {
         for (const station of stations) {
             // Berechne die Pfade exakt so, wie es deine Upload- und Sortier-Routen tun
             const baseMediaDir = path.join(globalDockerDir, station.azuracast_station_id, 'media');
-            const newFolder = path.join(globalDockerDir, 'new'); // Der globale Sammelordner
+            //const newFolder = path.join(globalDockerDir, 'new'); // Der globale Sammelordner   
+            const newFolder = process.env.AZURACAST_MEDIA_TEMP_PATH || path.join(globalDockerDir, 'new');
+
             const mappedFolder = path.join(baseMediaDir, 'mapped-to-playlist');
             const archiveFolder = path.join(baseMediaDir, 'archive');
 
